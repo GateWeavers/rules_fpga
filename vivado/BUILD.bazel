@@ -1,0 +1,11 @@
+load(":toolchain.bzl", "vivado_toolchain")
+
+vivado_toolchain(
+    name = "vivado_toolchain_impl",
+)
+
+toolchain(
+    name = "vivado_toolchain",
+    toolchain = ":vivado_toolchain_impl",
+    toolchain_type = "//fpga:toolchain_type",
+)

@@ -1,0 +1,27 @@
+load("@gateweaver_rules_vhdl//sim:sim.bzl", "vhdl_test")
+load("@gateweaver_rules_vhdl//sim:vunit_rules.bzl", "vunit_sim")
+load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "vhdl_library")
+load("//fpga:rules.bzl", "fpga_flow")
+
+vhdl_library(
+    name = "lib",
+    srcs = ["vhdl/lib.vhd"],
+    library_name = "lib",
+)
+
+# FPGA Flow for basic design
+fpga_flow(
+    name = "basic_fpga",
+    top = "dummy",
+    part = "xc7z020clg400-1",
+    deps = [":lib"],
+    constraints = ["constraints/pins.xdc"],
+)
+
+# Simulation targets...
+vhdl_test(
+    name = "tb_ghdl",
+    srcs = ["vhdl/tb.vhd"],
+    dut = ":lib",
+    testbench_entity = "tb",
+)

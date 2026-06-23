@@ -1,0 +1,10 @@
+module(
+    name = "gateweaver_rules_fpga",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "gateweaver_rules_vhdl", version = "0.1.0")
+
+local_path_override("gateweaver_rules_vhdl","../rules_vhdl")
+
+register_toolchains("//vivado:vivado_toolchain")

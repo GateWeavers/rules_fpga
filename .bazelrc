@@ -1,0 +1,79 @@
+###############################
+# Filesystem interactions     #
+###############################
+
+# Don't create symlinks like bazel-out in the project.
+# These cause VSCode to traverse a massive tree, opening file handles and
+# eventually a surprising failure with auto-discovery of the C++ toolchain in
+# MacOS High Sierra.
+# See https://github.com/bazelbuild/bazel/issues/4603
+# build --symlink_prefix=/
+# the custom prefix must start with bazel- to avoid symlink loop for top targets
+build --symlink_prefix=bazel-build/
+
+#--output_base=<path> default: see description
+ #   If set, specifies the output location to which all build output will be written. Otherwise, the location will be ${OUTPUT_ROOT}/_blaze_${USER}/${MD5_OF_WORKSPACE_ROOT}. Note: If you specify a different option from one to the next Bazel invocation for this value, you'll likely start up a new, additional Bazel server. Bazel starts exactly one server per specified output base. Typically there is one output base per workspace - however, with this option you may have multiple output bases per workspace and thereby run multiple builds for the same client on the same machine concurrently. See 'bazel help shutdown' on how to shutdown a Bazel server.
+
+#--output_user_root=<path> default: see description
+    #The user-specific directory beneath which all build outputs are written; by default, this is a function of $USER, but by specifying a constant, build outputs can be shared between collaborating users.
+
+
+# Performance: avoid stat'ing input files
+#build --watchfs
+
+# https://docs.bazel.build/versions/master/command-line-reference.html#build-options
+build --local_termination_grace_seconds=3
+# build --experimental_scale_timeouts=0.5
+
+###############################
+# Release support             #
+###############################
+
+# Releases should always be stamped with version control info
+#build --workspace_status_command=./tools/workspace_status.sh
+
+###############################
+# Output                      #
+###############################
+
+# A more useful default output mode for bazel query
+# Prints eg. "ng_module rule //foo:bar" rather than just "//foo:bar"
+query --output=label_kind
+
+# By default, failing tests don't print any output, it goes to the log file
+test --test_output=errors
+
+#reduce the limit to supress vivado synthesis stdout
+build --experimental_ui_max_stdouterr_bytes=1000000
+
+# The printed files are convenient strings for copy+pasting to the shell, to execute them.
+# This option requires an integer argument, which is the threshold number of targets above which result information is not printed.
+# Show the output files created by builds that requested more than one target.
+# This helps users locate the build outputs in more cases.
+common --show_result=20
+# Docs: https://registry.build/flag/bazel@8.4.0?filter=show_result
+
+## setup a unique local cache for bazel
+# build --disk_cache=~/.cache/bazel
+
+###############################
+# Platform                    #
+###############################
+
+# allow legacy cc_toolchain to be resolved with the new logic.
+build --incompatible_enable_cc_toolchain_resolution
+
+###############################
+# reproductibility            #
+###############################
+
+# Make builds more reproducible by using a static value for PATH and not inheriting LD_LIBRARY_PATH.
+# Use `--action_env=ENV_VARIABLE` if you want to inherit specific variables from the environment where Bazel runs.
+# Note that doing so can prevent cross-user caching if a shared cache is used.
+# See https://github.com/bazelbuild/bazel/issues/2574 for more details.
+common --incompatible_strict_action_env
+# Docs: https://registry.build/flag/bazel@8.4.0?filter=incompatible_strict_action_env
+
+# build --experimental_platform_in_output_dir
+
+common --@pypi//venv=gateweaver_rules_vhdl
