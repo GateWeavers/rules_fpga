@@ -1,4 +1,5 @@
 load("//fpga:providers.bzl", "FpgaProjectInfo", "FpgaSynthesisInfo", "FpgaImplementationInfo", "FpgaBitstreamInfo")
+load("//fpga:utility.bzl", "get_resource_set")
 
 def vivado_create_project(ctx, toolchain_info, source_info, part, top):
     tcl_script = ctx.actions.declare_file(ctx.label.name + "_create_project.tcl")
@@ -50,11 +51,13 @@ def vivado_synthesis(
     part,
     generics = {},
     defines = {},
-    max_threads = 4,
     synth_options = [],
     pre_synth_tcl = None,
     post_synth_tcl = None,
 ):
+    max_threads = getattr(ctx.attr, "max_threads", 4)
+    memory = getattr(ctx.attr, "memory", 4000)
+
     netlist = ctx.actions.declare_file(ctx.label.name + ".dcp")
     tcl_script = ctx.actions.declare_file(ctx.label.name + "_synth.tcl")
     log_file = ctx.actions.declare_file(ctx.label.name + "_synth.log")
@@ -154,6 +157,7 @@ def vivado_synthesis(
         mnemonic = "VivadoSynth",
         progress_message = "Synthesizing %s with Vivado" % top,
         env = {"HOME": "/tmp"},
+        resource_set = get_resource_set(max_threads, memory),
     )
 
     return [
@@ -172,11 +176,13 @@ def vivado_implementation(
     synthesis_info,
     project_info,
     part,
-    max_threads = 8,
     impl_options = {},
     pre_impl_tcl = None,
     post_impl_tcl = None,
 ):
+    max_threads = getattr(ctx.attr, "max_threads", 4)
+    memory = getattr(ctx.attr, "memory", 4000)
+
     checkpoint = ctx.actions.declare_file(ctx.label.name + "_routed.dcp")
     tcl_script = ctx.actions.declare_file(ctx.label.name + "_impl.tcl")
     log_file = ctx.actions.declare_file(ctx.label.name + "_impl.log")
@@ -251,6 +257,7 @@ def vivado_implementation(
         mnemonic = "VivadoImpl",
         progress_message = "Implementing %s with Vivado" % synthesis_info.top_entity,
         env = {"HOME": "/tmp"},
+        resource_set = get_resource_set(max_threads, memory),
     )
 
     return [
@@ -271,6 +278,9 @@ def vivado_bitstream(
     pre_bit_tcl = None,
     post_bit_tcl = None,
 ):
+    max_threads = getattr(ctx.attr, "max_threads", 1)
+    memory = getattr(ctx.attr, "memory", 1000)
+
     bitstream = ctx.actions.declare_file(ctx.label.name + ".bit")
     probes = ctx.actions.declare_file(ctx.label.name + ".ltx")
     platform = ctx.actions.declare_file(ctx.label.name + ".xsa")
@@ -319,6 +329,7 @@ def vivado_bitstream(
         mnemonic = "VivadoBitstream",
         progress_message = "Generating bitstream with Vivado",
         env = {"HOME": "/tmp"},
+        resource_set = get_resource_set(max_threads, memory),
     )
 
     return [

@@ -2,6 +2,7 @@ load("//fpga:providers.bzl", "FpgaSourceInfo", "FpgaProjectInfo", "FpgaSynthesis
 load("//fpga:toolchain.bzl", "FpgaToolchainInfo")
 load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo")
 
+
 def _collect_sources(ctx):
     # (keeping the same logic but ensuring it's accessible)
     vhdl_libs = []
@@ -111,6 +112,7 @@ def _fpga_synthesis_impl(ctx):
     project_info = ctx.attr.project[FpgaProjectInfo] if ctx.attr.project else None
     if project_info and hasattr(project_info, "sources") and project_info.sources:
         source_info = project_info.sources
+
     return toolchain.synthesis(
         ctx,
         toolchain,
@@ -120,7 +122,6 @@ def _fpga_synthesis_impl(ctx):
         ctx.attr.part,
         generics = ctx.attr.generics,
         defines = ctx.attr.defines,
-        max_threads = ctx.attr.max_threads,
         synth_options = ctx.attr.synth_options,
         pre_synth_tcl = ctx.file.pre_synth_tcl,
         post_synth_tcl = ctx.file.post_synth_tcl,
@@ -140,7 +141,8 @@ fpga_synthesis = rule(
         "toolchain": attr.label(),
         "generics": attr.string_dict(default = {}),
         "defines": attr.string_dict(default = {}),
-        "max_threads": attr.int(default = 8),
+        "max_threads": attr.int(),
+        "memory": attr.int(),
         "synth_options": attr.string_list(default = []),
         "pre_synth_tcl": attr.label(allow_single_file = [".tcl"]),
         "post_synth_tcl": attr.label(allow_single_file = [".tcl"]),
@@ -156,13 +158,13 @@ def _fpga_implementation_impl(ctx):
     toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
     synthesis_info = ctx.attr.synthesis[FpgaSynthesisInfo]
     project_info = ctx.attr.project[FpgaProjectInfo] if ctx.attr.project else None
+
     return toolchain.implementation(
         ctx,
         toolchain,
         synthesis_info,
         project_info,
         ctx.attr.part,
-        max_threads = ctx.attr.max_threads,
         impl_options = ctx.attr.impl_options,
         pre_impl_tcl = ctx.file.pre_impl_tcl,
         post_impl_tcl = ctx.file.post_impl_tcl,
@@ -177,7 +179,8 @@ fpga_implementation = rule(
         "fpga_toolchain": attr.string(),
         "fpga_toolchain_version": attr.string(),
         "toolchain": attr.label(),
-        "max_threads": attr.int(default = 8),
+        "max_threads": attr.int(),
+        "memory": attr.int(),
         "impl_options": attr.string_list_dict(default = {}),
         "pre_impl_tcl": attr.label(allow_single_file = [".tcl"]),
         "post_impl_tcl": attr.label(allow_single_file = [".tcl"]),
@@ -193,6 +196,7 @@ def _fpga_bitstream_impl(ctx):
     toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
     implementation_info = ctx.attr.implementation[FpgaImplementationInfo]
     project_info = ctx.attr.project[FpgaProjectInfo] if ctx.attr.project else None
+
     return toolchain.bitstream(
         ctx,
         toolchain,
@@ -213,6 +217,8 @@ fpga_bitstream = rule(
         "fpga_toolchain": attr.string(),
         "fpga_toolchain_version": attr.string(),
         "toolchain": attr.label(),
+        "max_threads": attr.int(),
+        "memory": attr.int(),
         "bit_options": attr.string_list(default = []),
         "pre_bit_tcl": attr.label(allow_single_file = [".tcl"]),
         "post_bit_tcl": attr.label(allow_single_file = [".tcl"]),
@@ -236,7 +242,10 @@ def fpga_flow(
     toolchain = None,
     generics = {},
     defines = {},
-    max_threads = 8,
+    max_threads = 4,
+    memory = 4000,
+    bit_max_threads = 1,
+    bit_memory = 1000,
     synth_options = [],
     impl_options = {},
     bit_options = [],
@@ -270,6 +279,7 @@ def fpga_flow(
         generics = generics,
         defines = defines,
         max_threads = max_threads,
+        memory = memory,
         synth_options = synth_options,
         pre_synth_tcl = pre_synth_tcl,
         post_synth_tcl = post_synth_tcl,
@@ -284,6 +294,7 @@ def fpga_flow(
         fpga_toolchain_version = fpga_toolchain_version,
         toolchain = toolchain,
         max_threads = max_threads,
+        memory = memory,
         impl_options = impl_options,
         pre_impl_tcl = pre_impl_tcl,
         post_impl_tcl = post_impl_tcl,
@@ -297,6 +308,8 @@ def fpga_flow(
         fpga_toolchain = fpga_toolchain,
         fpga_toolchain_version = fpga_toolchain_version,
         toolchain = toolchain,
+        max_threads = bit_max_threads,
+        memory = bit_memory,
         bit_options = bit_options,
         pre_bit_tcl = pre_bit_tcl,
         post_bit_tcl = post_bit_tcl,
