@@ -14,4 +14,3 @@ create_project $PROJ_NAME {OUTPUT_DIR} -part $PART_NAME -force
 {ADD_CONSTRAINTS}
 
 set_property top {TOP_MODULE} [current_fileset]
-close_project

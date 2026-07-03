@@ -4,11 +4,12 @@ def vivado_create_project(ctx, toolchain_info, source_info, part, top):
     tcl_script = ctx.actions.declare_file(ctx.label.name + "_create_project.tcl")
 
     vhdl_content = []
+    inputs = []
+    # todo not default to vhdl 2008 but use the info from the provider
     for lib in source_info.vhdl_libs:
         files = [f.path for f in lib.sources.to_list()]
-        vhdl_content.append("add_files -norecurse {%s}" % " ".join(files))
-        vhdl_content.append("set_property library %s [get_files {%s}]" % (lib.library, " ".join(files)))
-        vhdl_content.append("set_property file_type {VHDL 2008} [get_files {%s}]" % " ".join(files))
+        vhdl_content.append("read_vhdl -library %s -vhdl2008 {%s}" % (lib.library, " ".join(files)))
+        inputs.extend(lib.sources.to_list())
 
     verilog_files = [f.path for f in source_info.verilog_srcs.to_list()]
     verilog_content = ["add_files -norecurse {%s}" % " ".join(verilog_files)] if verilog_files else []
@@ -37,7 +38,7 @@ def vivado_create_project(ctx, toolchain_info, source_info, part, top):
             tool_name = "vivado",
             sources = source_info,
         ),
-        DefaultInfo(files = depset([tcl_script])),
+        DefaultInfo(files = depset([tcl_script] + inputs)),
     ]
 
 def vivado_synthesis(
@@ -65,7 +66,7 @@ def vivado_synthesis(
     inputs = []
 
     if project_info:
-        open_project_or_in_memory = "source %s\nopen_project %s.xpr" % (project_info.project_script.path, project_info.project_name)
+        open_project_or_in_memory = "source %s" % (project_info.project_script.path)
         inputs.append(project_info.project_script)
         if source_info:
             for lib in source_info.vhdl_libs:
@@ -139,11 +140,17 @@ def vivado_synthesis(
         },
     )
 
-    ctx.actions.run(
+    command = "%s && %s -mode batch -source %s -log %s -nojournal" % (
+        toolchain_info.setup_cmd,
+        toolchain_info.cmd,
+        tcl_script.path,
+        log_file.path,
+    )
+
+    ctx.actions.run_shell(
         outputs = [netlist, log_file, report_timing, report_utilization],
         inputs = inputs + [tcl_script],
-        executable = toolchain_info.cmd,
-        arguments = ["-mode", "batch", "-source", tcl_script.path, "-log", log_file.path, "-nojournal"],
+        command = command,
         mnemonic = "VivadoSynth",
         progress_message = "Synthesizing %s with Vivado" % top,
         env = {"HOME": "/tmp"},
@@ -182,20 +189,20 @@ def vivado_implementation(
     if synthesis_info.constraints:
         inputs.extend(synthesis_info.constraints.to_list())
 
-    if project_info:
-        open_project_or_open_checkpoint = "source %s\nopen_project %s.xpr\nopen_checkpoint %s" % (
-            project_info.project_script.path,
-            project_info.project_name,
-            synthesis_info.netlist.path
-        )
-        inputs.append(project_info.project_script)
-        if hasattr(project_info, "sources") and project_info.sources:
-            for lib in project_info.sources.vhdl_libs:
-                inputs.extend(lib.sources.to_list())
-            inputs.extend(project_info.sources.verilog_srcs.to_list())
-            inputs.extend(project_info.sources.constraints.to_list())
-    else:
-        open_project_or_open_checkpoint = "open_checkpoint %s" % synthesis_info.netlist.path
+    # if project_info:
+    #     open_project_or_open_checkpoint = "source %s\nopen_project %s.xpr\nopen_checkpoint %s" % (
+    #         project_info.project_script.path,
+    #         project_info.project_name,
+    #         synthesis_info.netlist.path
+    #     )
+    #     inputs.append(project_info.project_script)
+    #     if hasattr(project_info, "sources") and project_info.sources:
+    #         for lib in project_info.sources.vhdl_libs:
+    #             inputs.extend(lib.sources.to_list())
+    #         inputs.extend(project_info.sources.verilog_srcs.to_list())
+    #         inputs.extend(project_info.sources.constraints.to_list())
+    # else:
+    open_project_or_open_checkpoint = "open_checkpoint %s" % synthesis_info.netlist.path
 
     if pre_impl_tcl:
         inputs.append(pre_impl_tcl)
@@ -230,11 +237,17 @@ def vivado_implementation(
         },
     )
 
-    ctx.actions.run(
+    command = "%s && %s -mode batch -source %s -log %s -nojournal" % (
+        toolchain_info.setup_cmd,
+        toolchain_info.cmd,
+        tcl_script.path,
+        log_file.path,
+    )
+
+    ctx.actions.run_shell(
         outputs = [checkpoint, log_file, report_timing, report_utilization, report_route_status],
         inputs = inputs + [tcl_script],
-        executable = toolchain_info.cmd,
-        arguments = ["-mode", "batch", "-source", tcl_script.path, "-log", log_file.path, "-nojournal"],
+        command = command,
         mnemonic = "VivadoImpl",
         progress_message = "Implementing %s with Vivado" % synthesis_info.top_entity,
         env = {"HOME": "/tmp"},
@@ -266,21 +279,7 @@ def vivado_bitstream(
 
     open_project_or_open_checkpoint = ""
     inputs = [implementation_info.design_checkpoint]
-
-    if project_info:
-        open_project_or_open_checkpoint = "source %s\nopen_project %s.xpr\nopen_checkpoint %s" % (
-            project_info.project_script.path,
-            project_info.project_name,
-            implementation_info.design_checkpoint.path
-        )
-        inputs.append(project_info.project_script)
-        if hasattr(project_info, "sources") and project_info.sources:
-            for lib in project_info.sources.vhdl_libs:
-                inputs.extend(lib.sources.to_list())
-            inputs.extend(project_info.sources.verilog_srcs.to_list())
-            inputs.extend(project_info.sources.constraints.to_list())
-    else:
-        open_project_or_open_checkpoint = "open_checkpoint %s" % implementation_info.design_checkpoint.path
+    open_project_or_open_checkpoint = "open_checkpoint %s" % implementation_info.design_checkpoint.path
 
     if pre_bit_tcl:
         inputs.append(pre_bit_tcl)
@@ -306,11 +305,17 @@ def vivado_bitstream(
         },
     )
 
-    ctx.actions.run(
+    command = "%s && %s -mode batch -source %s -log %s -nojournal" % (
+        toolchain_info.setup_cmd,
+        toolchain_info.cmd,
+        tcl_script.path,
+        log_file.path,
+    )
+
+    ctx.actions.run_shell(
         outputs = [bitstream, probes, platform, log_file],
         inputs = inputs + [tcl_script],
-        executable = toolchain_info.cmd,
-        arguments = ["-mode", "batch", "-source", tcl_script.path, "-log", log_file.path, "-nojournal"],
+        command = command,
         mnemonic = "VivadoBitstream",
         progress_message = "Generating bitstream with Vivado",
         env = {"HOME": "/tmp"},
