@@ -10,8 +10,10 @@ FpgaSourceInfo = provider(
 FpgaProjectInfo = provider(
     doc = "Represents an initialized FPGA project.",
     fields = {
-        "project_file": "The tool-specific project file (e.g., .xpr)",
+        "project_script": "The project creation script (TCL)",
+        "project_name": "Name of the project",
         "tool_name": "Name of the tool that created it",
+        "sources": "FpgaSourceInfo: The source files associated with this project",
     },
 )
 

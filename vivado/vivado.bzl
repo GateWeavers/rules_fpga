@@ -1,13 +1,7 @@
 load("//fpga:providers.bzl", "FpgaProjectInfo", "FpgaSynthesisInfo", "FpgaImplementationInfo", "FpgaBitstreamInfo")
 
 def vivado_create_project(ctx, toolchain_info, source_info, part, top):
-    project_file = ctx.actions.declare_file(ctx.label.name + ".xpr")
     tcl_script = ctx.actions.declare_file(ctx.label.name + "_create_project.tcl")
-    log_file = ctx.actions.declare_file(ctx.label.name + "_create_project.log")
-
-    # ... (rest of function body)
-    # I need to provide the full body or at least the part that changed.
-    # Actually, I'll just rewrite it correctly.
 
     vhdl_content = []
     for lib in source_info.vhdl_libs:
@@ -27,6 +21,7 @@ def vivado_create_project(ctx, toolchain_info, source_info, part, top):
         output = tcl_script,
         substitutions = {
             "{PROJECT_NAME}": ctx.label.name,
+            "{OUTPUT_DIR}": ".",
             "{PART_NAME}": part,
             "{ADD_VHDL_SOURCES}": "\n".join(vhdl_content),
             "{ADD_VERILOG_SOURCES}": "\n".join(verilog_content),
@@ -35,27 +30,30 @@ def vivado_create_project(ctx, toolchain_info, source_info, part, top):
         },
     )
 
-    inputs = []
-    for lib in source_info.vhdl_libs:
-        inputs.extend(lib.sources.to_list())
-    inputs.extend(source_info.verilog_srcs.to_list())
-    inputs.extend(source_info.constraints.to_list())
+    return [
+        FpgaProjectInfo(
+            project_script = tcl_script,
+            project_name = ctx.label.name,
+            tool_name = "vivado",
+            sources = source_info,
+        ),
+        DefaultInfo(files = depset([tcl_script])),
+    ]
 
-    ctx.actions.run(
-        outputs = [project_file, log_file],
-        inputs = inputs + [tcl_script],
-        executable = toolchain_info.cmd,
-        arguments = ["-mode", "batch", "-source", tcl_script.path, "-log", log_file.path, "-nojournal"],
-        mnemonic = "VivadoProject",
-        progress_message = "Creating Vivado project %s" % ctx.label.name,
-    )
-
-    return FpgaProjectInfo(
-        project_file = project_file,
-        tool_name = "vivado",
-    )
-
-def vivado_synthesis(ctx, toolchain_info, project_info, source_info, top, part):
+def vivado_synthesis(
+    ctx,
+    toolchain_info,
+    project_info,
+    source_info,
+    top,
+    part,
+    generics = {},
+    defines = {},
+    max_threads = 4,
+    synth_options = [],
+    pre_synth_tcl = None,
+    post_synth_tcl = None,
+):
     netlist = ctx.actions.declare_file(ctx.label.name + ".dcp")
     tcl_script = ctx.actions.declare_file(ctx.label.name + "_synth.tcl")
     log_file = ctx.actions.declare_file(ctx.label.name + "_synth.log")
@@ -67,26 +65,60 @@ def vivado_synthesis(ctx, toolchain_info, project_info, source_info, top, part):
     inputs = []
 
     if project_info:
-        open_project_or_in_memory = "open_project %s" % project_info.project_file.path
-        inputs.append(project_info.project_file)
+        open_project_or_in_memory = "source %s\nopen_project %s.xpr" % (project_info.project_script.path, project_info.project_name)
+        inputs.append(project_info.project_script)
+        if source_info:
+            for lib in source_info.vhdl_libs:
+                inputs.extend(lib.sources.to_list())
+            inputs.extend(source_info.verilog_srcs.to_list())
+            inputs.extend(source_info.constraints.to_list())
     else:
         open_project_or_in_memory = "create_project -in_memory -part %s" % part
-        
+
         vhdl_content = []
         for lib in source_info.vhdl_libs:
             files = [f.path for f in lib.sources.to_list()]
             vhdl_content.append("read_vhdl -library %s -vhdl2008 {%s}" % (lib.library, " ".join(files)))
             inputs.extend(lib.sources.to_list())
-        
+
         verilog_files = [f.path for f in source_info.verilog_srcs.to_list()]
         verilog_content = ["read_verilog {%s}" % " ".join(verilog_files)] if verilog_files else []
         inputs.extend(source_info.verilog_srcs.to_list())
-        
+
         constraint_files = [f.path for f in source_info.constraints.to_list()]
         constraint_content = ["read_xdc {%s}" % " ".join(constraint_files)] if constraint_files else []
         inputs.extend(source_info.constraints.to_list())
-        
+
         read_sources_if_memory = "\n".join(vhdl_content + verilog_content + constraint_content)
+
+    if pre_synth_tcl:
+        inputs.append(pre_synth_tcl)
+    if post_synth_tcl:
+        inputs.append(post_synth_tcl)
+
+    synth_args_list = []
+    if generics:
+        gen_strs = []
+        for k, v in generics.items():
+            gen_strs.append("{}={}".format(k, v))
+        synth_args_list.append("-generic {{{}}}".format(" ".join(gen_strs)))
+
+    if defines:
+        def_strs = []
+        for k, v in defines.items():
+            if v:
+                def_strs.append("{}={}".format(k, v))
+            else:
+                def_strs.append(k)
+        synth_args_list.append("-verilog_define {{{}}}".format(" ".join(def_strs)))
+
+    if synth_options:
+        synth_args_list.extend(synth_options)
+
+    synth_args = " ".join(synth_args_list)
+
+    pre_synth_line = "source %s" % pre_synth_tcl.path if pre_synth_tcl else ""
+    post_synth_line = "source %s" % post_synth_tcl.path if post_synth_tcl else ""
 
     ctx.actions.expand_template(
         template = toolchain_info.templates.synthesis,
@@ -97,7 +129,10 @@ def vivado_synthesis(ctx, toolchain_info, project_info, source_info, top, part):
             "{TOP_MODULE}": top,
             "{OPEN_PROJECT_OR_IN_MEMORY}": open_project_or_in_memory,
             "{READ_SOURCES_IF_MEMORY}": read_sources_if_memory,
-            "{SYNTH_ARGS}": "", # Can add more later
+            "{SYNTH_ARGS}": synth_args,
+            "{MAX_THREADS}": str(max_threads),
+            "{PRE_SYNTH_TCL}": pre_synth_line,
+            "{POST_SYNTH_TCL}": post_synth_line,
             "{REPORT_TIMING}": report_timing.path,
             "{REPORT_UTILIZATION}": report_utilization.path,
             "{OUTPUT_CHECKPOINT}": netlist.path,
@@ -111,16 +146,30 @@ def vivado_synthesis(ctx, toolchain_info, project_info, source_info, top, part):
         arguments = ["-mode", "batch", "-source", tcl_script.path, "-log", log_file.path, "-nojournal"],
         mnemonic = "VivadoSynth",
         progress_message = "Synthesizing %s with Vivado" % top,
+        env = {"HOME": "/tmp"},
     )
 
-    return FpgaSynthesisInfo(
-        netlist = netlist,
-        netlist_type = "dcp",
-        top_entity = top,
-        constraints = source_info.constraints if source_info else depset(),
-    )
+    return [
+        FpgaSynthesisInfo(
+            netlist = netlist,
+            netlist_type = "dcp",
+            top_entity = top,
+            constraints = source_info.constraints if source_info else depset(),
+        ),
+        DefaultInfo(files = depset([netlist])),
+    ]
 
-def vivado_implementation(ctx, toolchain_info, synthesis_info, project_info, part):
+def vivado_implementation(
+    ctx,
+    toolchain_info,
+    synthesis_info,
+    project_info,
+    part,
+    max_threads = 8,
+    impl_options = {},
+    pre_impl_tcl = None,
+    post_impl_tcl = None,
+):
     checkpoint = ctx.actions.declare_file(ctx.label.name + "_routed.dcp")
     tcl_script = ctx.actions.declare_file(ctx.label.name + "_impl.tcl")
     log_file = ctx.actions.declare_file(ctx.label.name + "_impl.log")
@@ -130,12 +179,36 @@ def vivado_implementation(ctx, toolchain_info, synthesis_info, project_info, par
 
     open_project_or_open_checkpoint = ""
     inputs = [synthesis_info.netlist]
+    if synthesis_info.constraints:
+        inputs.extend(synthesis_info.constraints.to_list())
 
     if project_info:
-        open_project_or_open_checkpoint = "open_project %s\nopen_checkpoint %s" % (project_info.project_file.path, synthesis_info.netlist.path)
-        inputs.append(project_info.project_file)
+        open_project_or_open_checkpoint = "source %s\nopen_project %s.xpr\nopen_checkpoint %s" % (
+            project_info.project_script.path,
+            project_info.project_name,
+            synthesis_info.netlist.path
+        )
+        inputs.append(project_info.project_script)
+        if hasattr(project_info, "sources") and project_info.sources:
+            for lib in project_info.sources.vhdl_libs:
+                inputs.extend(lib.sources.to_list())
+            inputs.extend(project_info.sources.verilog_srcs.to_list())
+            inputs.extend(project_info.sources.constraints.to_list())
     else:
         open_project_or_open_checkpoint = "open_checkpoint %s" % synthesis_info.netlist.path
+
+    if pre_impl_tcl:
+        inputs.append(pre_impl_tcl)
+    if post_impl_tcl:
+        inputs.append(post_impl_tcl)
+
+    pre_impl_line = "source %s" % pre_impl_tcl.path if pre_impl_tcl else ""
+    post_impl_line = "source %s" % post_impl_tcl.path if post_impl_tcl else ""
+
+    opt_options = " ".join(impl_options.get("opt", []))
+    place_options = " ".join(impl_options.get("place", []))
+    phys_opt_options = " ".join(impl_options.get("phys_opt", []))
+    route_options = " ".join(impl_options.get("route", []))
 
     ctx.actions.expand_template(
         template = toolchain_info.templates.implementation,
@@ -143,6 +216,13 @@ def vivado_implementation(ctx, toolchain_info, synthesis_info, project_info, par
         substitutions = {
             "{PROJECT_NAME}": ctx.label.name,
             "{OPEN_PROJECT_OR_OPEN_CHECKPOINT}": open_project_or_open_checkpoint,
+            "{MAX_THREADS}": str(max_threads),
+            "{PRE_IMPL_TCL}": pre_impl_line,
+            "{OPT_OPTIONS}": opt_options,
+            "{PLACE_OPTIONS}": place_options,
+            "{PHYS_OPT_OPTIONS}": phys_opt_options,
+            "{ROUTE_OPTIONS}": route_options,
+            "{POST_IMPL_TCL}": post_impl_line,
             "{REPORT_TIMING}": report_timing.path,
             "{REPORT_UTILIZATION}": report_utilization.path,
             "{REPORT_ROUTE_STATUS}": report_route_status.path,
@@ -157,14 +237,27 @@ def vivado_implementation(ctx, toolchain_info, synthesis_info, project_info, par
         arguments = ["-mode", "batch", "-source", tcl_script.path, "-log", log_file.path, "-nojournal"],
         mnemonic = "VivadoImpl",
         progress_message = "Implementing %s with Vivado" % synthesis_info.top_entity,
+        env = {"HOME": "/tmp"},
     )
 
-    return FpgaImplementationInfo(
-        design_checkpoint = checkpoint,
-        bitstream_ready = True,
-    )
+    return [
+        FpgaImplementationInfo(
+            design_checkpoint = checkpoint,
+            bitstream_ready = True,
+        ),
+        DefaultInfo(files = depset([checkpoint])),
+    ]
 
-def vivado_bitstream(ctx, toolchain_info, implementation_info, project_info, part):
+def vivado_bitstream(
+    ctx,
+    toolchain_info,
+    implementation_info,
+    project_info,
+    part,
+    bit_options = [],
+    pre_bit_tcl = None,
+    post_bit_tcl = None,
+):
     bitstream = ctx.actions.declare_file(ctx.label.name + ".bit")
     probes = ctx.actions.declare_file(ctx.label.name + ".ltx")
     platform = ctx.actions.declare_file(ctx.label.name + ".xsa")
@@ -175,10 +268,28 @@ def vivado_bitstream(ctx, toolchain_info, implementation_info, project_info, par
     inputs = [implementation_info.design_checkpoint]
 
     if project_info:
-        open_project_or_open_checkpoint = "open_project %s\nopen_checkpoint %s" % (project_info.project_file.path, implementation_info.design_checkpoint.path)
-        inputs.append(project_info.project_file)
+        open_project_or_open_checkpoint = "source %s\nopen_project %s.xpr\nopen_checkpoint %s" % (
+            project_info.project_script.path,
+            project_info.project_name,
+            implementation_info.design_checkpoint.path
+        )
+        inputs.append(project_info.project_script)
+        if hasattr(project_info, "sources") and project_info.sources:
+            for lib in project_info.sources.vhdl_libs:
+                inputs.extend(lib.sources.to_list())
+            inputs.extend(project_info.sources.verilog_srcs.to_list())
+            inputs.extend(project_info.sources.constraints.to_list())
     else:
         open_project_or_open_checkpoint = "open_checkpoint %s" % implementation_info.design_checkpoint.path
+
+    if pre_bit_tcl:
+        inputs.append(pre_bit_tcl)
+    if post_bit_tcl:
+        inputs.append(post_bit_tcl)
+
+    pre_bit_line = "source %s" % pre_bit_tcl.path if pre_bit_tcl else ""
+    post_bit_line = "source %s" % post_bit_tcl.path if post_bit_tcl else ""
+    bit_args = " ".join(bit_options) if bit_options else ""
 
     ctx.actions.expand_template(
         template = toolchain_info.templates.bitstream,
@@ -186,6 +297,9 @@ def vivado_bitstream(ctx, toolchain_info, implementation_info, project_info, par
         substitutions = {
             "{PROJECT_NAME}": ctx.label.name,
             "{OPEN_PROJECT_OR_OPEN_CHECKPOINT}": open_project_or_open_checkpoint,
+            "{PRE_BIT_TCL}": pre_bit_line,
+            "{BIT_OPTIONS}": bit_args,
+            "{POST_BIT_TCL}": post_bit_line,
             "{BITSTREAM}": bitstream.path,
             "{PROBES}": probes.path,
             "{PLATFORM}": platform.path,
@@ -199,10 +313,14 @@ def vivado_bitstream(ctx, toolchain_info, implementation_info, project_info, par
         arguments = ["-mode", "batch", "-source", tcl_script.path, "-log", log_file.path, "-nojournal"],
         mnemonic = "VivadoBitstream",
         progress_message = "Generating bitstream with Vivado",
+        env = {"HOME": "/tmp"},
     )
 
-    return FpgaBitstreamInfo(
-        bitstream = bitstream,
-        debug_probes = probes,
-        platform = platform,
-    )
+    return [
+        FpgaBitstreamInfo(
+            bitstream = bitstream,
+            debug_probes = probes,
+            platform = platform,
+        ),
+        DefaultInfo(files = depset([bitstream, probes, platform])),
+    ]

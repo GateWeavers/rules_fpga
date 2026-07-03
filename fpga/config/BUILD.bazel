@@ -1,0 +1,13 @@
+load("//fpga:rules.bzl", "config_flag")
+
+package(default_visibility = ["//visibility:public"])
+
+config_flag(
+    name = "fpga_toolchain",
+    build_setting_default = "vivado",
+)
+
+config_flag(
+    name = "fpga_toolchain_version",
+    build_setting_default = "default",
+)
