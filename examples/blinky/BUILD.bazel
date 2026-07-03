@@ -1,0 +1,41 @@
+load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "vhdl_library")
+load("//fpga:rules.bzl", "fpga_flow")
+
+vhdl_library(
+    name = "blinky_lib",
+    srcs = ["vhdl/blinky.vhd"],
+    library_name = "blinky_lib",
+)
+
+# Blinky flow targeting Zynq-7000 (PYNQ-Z1)
+fpga_flow(
+    name = "blinky_pynq_z1",
+    top = "blinky",
+    part = "xc7z020clg400-1",
+    deps = [":blinky_lib"],
+    constraints = ["constraints/pynq_z1.xdc"],
+    toolchain = "@fpga_toolchains//:vivado_2024_2",
+)
+
+# Custom Blinky flow demonstrating all new configuration attributes
+fpga_flow(
+    name = "blinky_pynq_z1_custom",
+    top = "blinky",
+    part = "xc7z020clg400-1",
+    deps = [":blinky_lib"],
+    constraints = ["constraints/pynq_z1.xdc"],
+    generics = {
+        "CLK_PERIOD_NS": "10",
+    },
+    defines = {
+        "DEBUG_ENABLE": "1",
+    },
+    max_threads = 4,
+    synth_options = ["-flatten_hierarchy none"],
+    impl_options = {
+        "opt": ["-directive Explore"],
+    },
+    bit_options = ["-bin_file"],
+    pre_synth_tcl = "support/pre_synth.tcl",
+    post_synth_tcl = "support/post_synth.tcl",
+)
