@@ -1,7 +1,10 @@
 load("//fpga:providers.bzl", "FpgaProjectInfo", "FpgaSynthesisInfo", "FpgaImplementationInfo", "FpgaBitstreamInfo")
 load("//fpga:utility.bzl", "get_resource_set")
 
-def vivado_create_project(ctx, toolchain_info, source_info, part, top):
+def vivado_create_project(ctx, toolchain_info, source_info):
+    part = ctx.attr.part
+    top = getattr(ctx.attr, "top", None)
+
     tcl_script = ctx.actions.declare_file(ctx.label.name + "_create_project.tcl")
 
     vhdl_content = []
@@ -42,19 +45,15 @@ def vivado_create_project(ctx, toolchain_info, source_info, part, top):
         DefaultInfo(files = depset([tcl_script] + inputs)),
     ]
 
-def vivado_synthesis(
-    ctx,
-    toolchain_info,
-    project_info,
-    source_info,
-    top,
-    part,
-    generics = {},
-    defines = {},
-    synth_options = [],
-    pre_synth_tcl = None,
-    post_synth_tcl = None,
-):
+def vivado_synthesis(ctx, toolchain_info, source_info):
+    project_info = ctx.attr.project[FpgaProjectInfo] if getattr(ctx.attr, "project", None) else None
+    top = ctx.attr.top
+    part = ctx.attr.part
+    generics = getattr(ctx.attr, "generics", {})
+    defines = getattr(ctx.attr, "defines", {})
+    synth_options = getattr(ctx.attr, "synth_options", [])
+    pre_synth_tcl = getattr(ctx.file, "pre_synth_tcl", None)
+    post_synth_tcl = getattr(ctx.file, "post_synth_tcl", None)
     max_threads = getattr(ctx.attr, "max_threads", 4)
     memory = getattr(ctx.attr, "memory", 4000)
 
@@ -170,16 +169,13 @@ def vivado_synthesis(
         DefaultInfo(files = depset([netlist])),
     ]
 
-def vivado_implementation(
-    ctx,
-    toolchain_info,
-    synthesis_info,
-    project_info,
-    part,
-    impl_options = {},
-    pre_impl_tcl = None,
-    post_impl_tcl = None,
-):
+def vivado_implementation(ctx, toolchain_info):
+    synthesis_info = ctx.attr.synthesis[FpgaSynthesisInfo]
+    project_info = ctx.attr.project[FpgaProjectInfo] if getattr(ctx.attr, "project", None) else None
+    part = ctx.attr.part
+    impl_options = getattr(ctx.attr, "impl_options", {})
+    pre_impl_tcl = getattr(ctx.file, "pre_impl_tcl", None)
+    post_impl_tcl = getattr(ctx.file, "post_impl_tcl", None)
     max_threads = getattr(ctx.attr, "max_threads", 4)
     memory = getattr(ctx.attr, "memory", 4000)
 
@@ -268,16 +264,13 @@ def vivado_implementation(
         DefaultInfo(files = depset([checkpoint])),
     ]
 
-def vivado_bitstream(
-    ctx,
-    toolchain_info,
-    implementation_info,
-    project_info,
-    part,
-    bit_options = [],
-    pre_bit_tcl = None,
-    post_bit_tcl = None,
-):
+def vivado_bitstream(ctx, toolchain_info):
+    implementation_info = ctx.attr.implementation[FpgaImplementationInfo]
+    project_info = ctx.attr.project[FpgaProjectInfo] if getattr(ctx.attr, "project", None) else None
+    part = ctx.attr.part
+    bit_options = getattr(ctx.attr, "bit_options", [])
+    pre_bit_tcl = getattr(ctx.file, "pre_bit_tcl", None)
+    post_bit_tcl = getattr(ctx.file, "post_bit_tcl", None)
     max_threads = getattr(ctx.attr, "max_threads", 1)
     memory = getattr(ctx.attr, "memory", 1000)
 

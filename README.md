@@ -1,4 +1,4 @@
-# gateweaver_rules_fpga
+# gateweavers_rules_fpga
 
 ## License
 

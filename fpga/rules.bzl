@@ -37,7 +37,7 @@ def _collect_sources(ctx):
 def _fpga_project_impl(ctx):
     toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
     source_info = _collect_sources(ctx)
-    return toolchain.create_project(ctx, toolchain, source_info, ctx.attr.part, ctx.attr.top)
+    return toolchain.create_project(ctx, toolchain, source_info)
 
 FpgaConfigInfo = provider(
     doc = "Provider for FPGA configuration flags.",
@@ -116,15 +116,7 @@ def _fpga_synthesis_impl(ctx):
     return toolchain.synthesis(
         ctx,
         toolchain,
-        project_info,
         source_info,
-        ctx.attr.top,
-        ctx.attr.part,
-        generics = ctx.attr.generics,
-        defines = ctx.attr.defines,
-        synth_options = ctx.attr.synth_options,
-        pre_synth_tcl = ctx.file.pre_synth_tcl,
-        post_synth_tcl = ctx.file.post_synth_tcl,
     )
 
 fpga_synthesis = rule(
@@ -156,19 +148,7 @@ fpga_synthesis = rule(
 
 def _fpga_implementation_impl(ctx):
     toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
-    synthesis_info = ctx.attr.synthesis[FpgaSynthesisInfo]
-    project_info = ctx.attr.project[FpgaProjectInfo] if ctx.attr.project else None
-
-    return toolchain.implementation(
-        ctx,
-        toolchain,
-        synthesis_info,
-        project_info,
-        ctx.attr.part,
-        impl_options = ctx.attr.impl_options,
-        pre_impl_tcl = ctx.file.pre_impl_tcl,
-        post_impl_tcl = ctx.file.post_impl_tcl,
-    )
+    return toolchain.implementation(ctx, toolchain)
 
 fpga_implementation = rule(
     implementation = _fpga_implementation_impl,
@@ -194,19 +174,7 @@ fpga_implementation = rule(
 
 def _fpga_bitstream_impl(ctx):
     toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
-    implementation_info = ctx.attr.implementation[FpgaImplementationInfo]
-    project_info = ctx.attr.project[FpgaProjectInfo] if ctx.attr.project else None
-
-    return toolchain.bitstream(
-        ctx,
-        toolchain,
-        implementation_info,
-        project_info,
-        ctx.attr.part,
-        bit_options = ctx.attr.bit_options,
-        pre_bit_tcl = ctx.file.pre_bit_tcl,
-        post_bit_tcl = ctx.file.post_bit_tcl,
-    )
+    return toolchain.bitstream(ctx, toolchain)
 
 fpga_bitstream = rule(
     implementation = _fpga_bitstream_impl,
