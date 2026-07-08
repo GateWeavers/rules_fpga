@@ -1,5 +1,5 @@
 load("//fpga:toolchain.bzl", "FpgaToolchainInfo")
-load(":vivado.bzl", "vivado_create_project","vivado_synthesis", "vivado_implementation", "vivado_bitstream")
+load(":vivado.bzl", "vivado_create_project", "vivado_synthesis", "vivado_implementation", "vivado_bitstream", "vivado_project_gui", "vivado_dcp_gui")
 
 def _vivado_toolchain_impl(ctx):
     return [
@@ -12,6 +12,8 @@ def _vivado_toolchain_impl(ctx):
                 synthesis = vivado_synthesis,
                 implementation = vivado_implementation,
                 bitstream = vivado_bitstream,
+                project_gui = vivado_project_gui,
+                dcp_gui = vivado_dcp_gui,
                 templates = struct(
                     create_project = ctx.file.create_project_tpl,
                     synthesis = ctx.file.synthesis_tpl,

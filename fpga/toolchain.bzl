@@ -8,6 +8,8 @@ FpgaToolchainInfo = provider(
         "synthesis": "Function(ctx, toolchain_info, source_info) -> FpgaSynthesisInfo",
         "implementation": "Function(ctx, toolchain_info) -> FpgaImplementationInfo",
         "bitstream": "Function(ctx, toolchain_info) -> FpgaBitstreamInfo",
+        "project_gui": "Function(ctx, toolchain_info) -> DefaultInfo (executable)",
+        "dcp_gui": "Function(ctx, toolchain_info) -> DefaultInfo (executable)",
         "templates": "Optional struct of tool-specific templates",
     },
 )

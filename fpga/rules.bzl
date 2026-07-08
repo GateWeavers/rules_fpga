@@ -12,6 +12,8 @@ def _collect_sources(ctx):
     for dep in ctx.attr.deps:
         if VhdlLibraryInfo in dep:
             info = dep[VhdlLibraryInfo]
+            print(info)
+
             for lib_struct in info.libraries.values():
                 vhdl_libs.append(struct(
                     library = lib_struct.library_name,
@@ -27,6 +29,8 @@ def _collect_sources(ctx):
             verilog_srcs.append(f)
         elif f.extension == "xdc" or f.extension == "sdc":
             constraints.append(f)
+
+    print(vhdl_libs)
 
     return FpgaSourceInfo(
         vhdl_libs = vhdl_libs,
@@ -198,6 +202,49 @@ fpga_bitstream = rule(
     toolchains = ["//fpga:toolchain_type"],
 )
 
+def _fpga_project_gui_impl(ctx):
+    toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
+    return toolchain.project_gui(ctx, toolchain)
+
+fpga_project_gui = rule(
+    implementation = _fpga_project_gui_impl,
+    attrs = {
+        "project": attr.label(mandatory = True, providers = [FpgaProjectInfo]),
+        "part": attr.string(mandatory = True),
+        "top": attr.string(),
+        "fpga_toolchain": attr.string(),
+        "fpga_toolchain_version": attr.string(),
+        "toolchain": attr.label(),
+        "_allowlist_function_transition": attr.label(
+            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+        ),
+    },
+    executable = True,
+    cfg = fpga_toolchain_transition,
+    toolchains = ["//fpga:toolchain_type"],
+)
+
+def _fpga_dcp_gui_impl(ctx):
+    toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
+    return toolchain.dcp_gui(ctx, toolchain)
+
+fpga_dcp_gui = rule(
+    implementation = _fpga_dcp_gui_impl,
+    attrs = {
+        "dcp": attr.label(allow_single_file = [".dcp"], mandatory = True),
+        "fpga_toolchain": attr.string(),
+        "fpga_toolchain_version": attr.string(),
+        "toolchain": attr.label(),
+        "_allowlist_function_transition": attr.label(
+            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+        ),
+    },
+    executable = True,
+    cfg = fpga_toolchain_transition,
+    toolchains = ["//fpga:toolchain_type"],
+)
+
+
 def fpga_flow(
     name,
     top,
@@ -256,7 +303,7 @@ def fpga_flow(
     fpga_implementation(
         name = name + "_implementation",
         synthesis = ":" + name + "_synthesis",
-        project = ":" + name + "_project",
+        # project = ":" + name + "_project",
         part = part,
         fpga_toolchain = fpga_toolchain,
         fpga_toolchain_version = fpga_toolchain_version,
@@ -271,7 +318,7 @@ def fpga_flow(
     fpga_bitstream(
         name = name,
         implementation = ":" + name + "_implementation",
-        project = ":" + name + "_project",
+        # project = ":" + name + "_project",
         part = part,
         fpga_toolchain = fpga_toolchain,
         fpga_toolchain_version = fpga_toolchain_version,
@@ -281,4 +328,33 @@ def fpga_flow(
         bit_options = bit_options,
         pre_bit_tcl = pre_bit_tcl,
         post_bit_tcl = post_bit_tcl,
+    )
+
+    fpga_project_gui(
+        name = name + ".gui",
+        project = ":" + name + "_project",
+        part = part,
+        top = top,
+        fpga_toolchain = fpga_toolchain,
+        fpga_toolchain_version = fpga_toolchain_version,
+        toolchain = toolchain,
+        tags = ["manual"],
+    )
+
+    fpga_dcp_gui(
+        name = name + "_synth.gui",
+        dcp = ":" + name + "_synthesis",
+        fpga_toolchain = fpga_toolchain,
+        fpga_toolchain_version = fpga_toolchain_version,
+        toolchain = toolchain,
+        tags = ["manual"],
+    )
+
+    fpga_dcp_gui(
+        name = name + "_impl.gui",
+        dcp = ":" + name + "_implementation",
+        fpga_toolchain = fpga_toolchain,
+        fpga_toolchain_version = fpga_toolchain_version,
+        toolchain = toolchain,
+        tags = ["manual"],
     )

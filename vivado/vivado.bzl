@@ -333,3 +333,100 @@ def vivado_bitstream(ctx, toolchain_info):
         ),
         DefaultInfo(files = depset([bitstream, probes, platform])),
     ]
+
+def vivado_project_gui(ctx, toolchain_info):
+    project_info = ctx.attr.project[FpgaProjectInfo]
+    source_info = project_info.sources
+    part = ctx.attr.part
+    top = getattr(ctx.attr, "top", None)
+
+    # Generate a TCL script using short_path to work inside runfiles tree
+    tcl_script = ctx.actions.declare_file(ctx.label.name + "_gui.tcl")
+
+    vhdl_content = []
+    inputs = []
+    for lib in source_info.vhdl_libs:
+        files = [f.short_path for f in lib.sources.to_list()]
+        vhdl_content.append("read_vhdl -library %s -vhdl2008 {%s}" % (lib.library, " ".join(files)))
+        inputs.extend(lib.sources.to_list())
+
+    verilog_files = [f.short_path for f in source_info.verilog_srcs.to_list()]
+    verilog_content = ["add_files -norecurse {%s}" % " ".join(verilog_files)] if verilog_files else []
+    inputs.extend(source_info.verilog_srcs.to_list())
+
+    constraint_files = [f.short_path for f in source_info.constraints.to_list()]
+    constraint_content = ["add_files -fileset constrs_1 -norecurse {%s}" % " ".join(constraint_files)] if constraint_files else []
+    inputs.extend(source_info.constraints.to_list())
+
+    ctx.actions.expand_template(
+        template = toolchain_info.templates.create_project,
+        output = tcl_script,
+        substitutions = {
+            "{PROJECT_NAME}": ctx.label.name,
+            "{OUTPUT_DIR}": ".",
+            "{PART_NAME}": part,
+            "{ADD_VHDL_SOURCES}": "\n".join(vhdl_content),
+            "{ADD_VERILOG_SOURCES}": "\n".join(verilog_content),
+            "{ADD_CONSTRAINTS}": "\n".join(constraint_content),
+            "{TOP_MODULE}": top if top else "top",
+        },
+    )
+
+    # Generate bash script
+    runner = ctx.actions.declare_file(ctx.label.name + "_runner.sh")
+    script_content = "#!/bin/bash\n"
+    if toolchain_info.setup_cmd:
+        script_content += toolchain_info.setup_cmd + "\n"
+    script_content += "{cmd} -mode gui -source {tcl}\n".format(
+        cmd = toolchain_info.cmd,
+        tcl = tcl_script.short_path,
+    )
+
+    ctx.actions.write(
+        output = runner,
+        content = script_content,
+        is_executable = True,
+    )
+
+    inputs.append(tcl_script)
+
+    return [
+        DefaultInfo(
+            executable = runner,
+            runfiles = ctx.runfiles(files = inputs),
+        )
+    ]
+
+def vivado_dcp_gui(ctx, toolchain_info):
+    dcp = ctx.file.dcp
+    tcl_script = ctx.actions.declare_file(ctx.label.name + "_gui.tcl")
+
+    # Generate a TCL script to open the checkpoint
+    tcl_content = "open_checkpoint {}\n".format(dcp.short_path)
+    ctx.actions.write(
+        output = tcl_script,
+        content = tcl_content,
+    )
+
+    # Generate bash script
+    runner = ctx.actions.declare_file(ctx.label.name + "_runner.sh")
+    script_content = "#!/bin/bash\n"
+    if toolchain_info.setup_cmd:
+        script_content += toolchain_info.setup_cmd + "\n"
+    script_content += "{cmd} -mode gui -source {tcl}\n".format(
+        cmd = toolchain_info.cmd,
+        tcl = tcl_script.short_path,
+    )
+
+    ctx.actions.write(
+        output = runner,
+        content = script_content,
+        is_executable = True,
+    )
+
+    return [
+        DefaultInfo(
+            executable = runner,
+            runfiles = ctx.runfiles(files = [dcp, tcl_script]),
+        )
+    ]
