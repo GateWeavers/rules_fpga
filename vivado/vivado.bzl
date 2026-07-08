@@ -1,25 +1,73 @@
 load("//fpga:providers.bzl", "FpgaProjectInfo", "FpgaSynthesisInfo", "FpgaImplementationInfo", "FpgaBitstreamInfo")
 load("//fpga:utility.bzl", "get_resource_set")
 
+def _get_vhdl_flag(version):
+    if not version:
+        return ""
+    # Normalize version string
+    v = str(version).lower().strip()
+    if v in "2008":
+        return "-vhdl2008"
+    if v in "2019":
+        return "-vhdl2019"
+    return ""
+
+def _format_sources(source_info, use_short_path = False, use_read_cmd = False):
+    inputs = []
+    vhdl_content = []
+    for lib in source_info.vhdl_libs:
+        files = [f.short_path if use_short_path else f.path for f in lib.sources.to_list()]
+        flag = _get_vhdl_flag(getattr(lib, "vhdl_version", None))
+        flag_str = " " + flag if flag else ""
+        vhdl_content.append("read_vhdl -library %s%s {%s}" % (lib.library, flag_str, " ".join(files)))
+        inputs.extend(lib.sources.to_list())
+
+    verilog_files = [f.short_path if use_short_path else f.path for f in source_info.verilog_srcs.to_list()]
+    if verilog_files:
+        if use_read_cmd:
+            verilog_content = ["read_verilog {%s}" % " ".join(verilog_files)]
+        else:
+            verilog_content = ["add_files -norecurse {%s}" % " ".join(verilog_files)]
+    else:
+        verilog_content = []
+    inputs.extend(source_info.verilog_srcs.to_list())
+
+    constraint_files = [f.short_path if use_short_path else f.path for f in source_info.constraints.to_list()]
+    if constraint_files:
+        if use_read_cmd:
+            constraint_content = ["read_xdc {%s}" % " ".join(constraint_files)]
+        else:
+            constraint_content = ["add_files -fileset constrs_1 -norecurse {%s}" % " ".join(constraint_files)]
+    else:
+        constraint_content = []
+    inputs.extend(source_info.constraints.to_list())
+
+    return vhdl_content, verilog_content, constraint_content, inputs
+
+def _write_gui_runner(ctx, toolchain_info, tcl_script):
+    runner = ctx.actions.declare_file(ctx.label.name + "_runner.sh")
+    script_content = "#!/bin/bash\n"
+    if toolchain_info.setup_cmd:
+        script_content += toolchain_info.setup_cmd + "\n"
+    script_content += "{cmd} -mode gui -source {tcl}\n".format(
+        cmd = toolchain_info.cmd,
+        tcl = tcl_script.short_path,
+    )
+
+    ctx.actions.write(
+        output = runner,
+        content = script_content,
+        is_executable = True,
+    )
+    return runner
+
 def vivado_create_project(ctx, toolchain_info, source_info):
     part = ctx.attr.part
     top = getattr(ctx.attr, "top", None)
 
     tcl_script = ctx.actions.declare_file(ctx.label.name + "_create_project.tcl")
 
-    vhdl_content = []
-    inputs = []
-    # todo not default to vhdl 2008 but use the info from the provider
-    for lib in source_info.vhdl_libs:
-        files = [f.path for f in lib.sources.to_list()]
-        vhdl_content.append("read_vhdl -library %s -vhdl2008 {%s}" % (lib.library, " ".join(files)))
-        inputs.extend(lib.sources.to_list())
-
-    verilog_files = [f.path for f in source_info.verilog_srcs.to_list()]
-    verilog_content = ["add_files -norecurse {%s}" % " ".join(verilog_files)] if verilog_files else []
-
-    constraint_files = [f.path for f in source_info.constraints.to_list()]
-    constraint_content = ["add_files -fileset constrs_1 -norecurse {%s}" % " ".join(constraint_files)] if constraint_files else []
+    vhdl_content, verilog_content, constraint_content, inputs = _format_sources(source_info, use_short_path = False, use_read_cmd = False)
 
     ctx.actions.expand_template(
         template = toolchain_info.templates.create_project,
@@ -69,28 +117,12 @@ def vivado_synthesis(ctx, toolchain_info, source_info):
 
     if project_info:
         open_project_or_in_memory = "source %s" % (project_info.project_script.path)
-        inputs.append(project_info.project_script)
-        if source_info:
-            for lib in source_info.vhdl_libs:
-                inputs.extend(lib.sources.to_list())
-            inputs.extend(source_info.verilog_srcs.to_list())
-            inputs.extend(source_info.constraints.to_list())
+        inputs.extend(ctx.attr.project[DefaultInfo].files.to_list())
     else:
         open_project_or_in_memory = "create_project -in_memory -part %s" % part
 
-        vhdl_content = []
-        for lib in source_info.vhdl_libs:
-            files = [f.path for f in lib.sources.to_list()]
-            vhdl_content.append("read_vhdl -library %s -vhdl2008 {%s}" % (lib.library, " ".join(files)))
-            inputs.extend(lib.sources.to_list())
-
-        verilog_files = [f.path for f in source_info.verilog_srcs.to_list()]
-        verilog_content = ["read_verilog {%s}" % " ".join(verilog_files)] if verilog_files else []
-        inputs.extend(source_info.verilog_srcs.to_list())
-
-        constraint_files = [f.path for f in source_info.constraints.to_list()]
-        constraint_content = ["read_xdc {%s}" % " ".join(constraint_files)] if constraint_files else []
-        inputs.extend(source_info.constraints.to_list())
+        vhdl_content, verilog_content, constraint_content, source_inputs = _format_sources(source_info, use_short_path = False, use_read_cmd = True)
+        inputs.extend(source_inputs)
 
         read_sources_if_memory = "\n".join(vhdl_content + verilog_content + constraint_content)
 
@@ -343,20 +375,7 @@ def vivado_project_gui(ctx, toolchain_info):
     # Generate a TCL script using short_path to work inside runfiles tree
     tcl_script = ctx.actions.declare_file(ctx.label.name + "_gui.tcl")
 
-    vhdl_content = []
-    inputs = []
-    for lib in source_info.vhdl_libs:
-        files = [f.short_path for f in lib.sources.to_list()]
-        vhdl_content.append("read_vhdl -library %s -vhdl2008 {%s}" % (lib.library, " ".join(files)))
-        inputs.extend(lib.sources.to_list())
-
-    verilog_files = [f.short_path for f in source_info.verilog_srcs.to_list()]
-    verilog_content = ["add_files -norecurse {%s}" % " ".join(verilog_files)] if verilog_files else []
-    inputs.extend(source_info.verilog_srcs.to_list())
-
-    constraint_files = [f.short_path for f in source_info.constraints.to_list()]
-    constraint_content = ["add_files -fileset constrs_1 -norecurse {%s}" % " ".join(constraint_files)] if constraint_files else []
-    inputs.extend(source_info.constraints.to_list())
+    vhdl_content, verilog_content, constraint_content, inputs = _format_sources(source_info, use_short_path = True, use_read_cmd = False)
 
     ctx.actions.expand_template(
         template = toolchain_info.templates.create_project,
@@ -373,20 +392,7 @@ def vivado_project_gui(ctx, toolchain_info):
     )
 
     # Generate bash script
-    runner = ctx.actions.declare_file(ctx.label.name + "_runner.sh")
-    script_content = "#!/bin/bash\n"
-    if toolchain_info.setup_cmd:
-        script_content += toolchain_info.setup_cmd + "\n"
-    script_content += "{cmd} -mode gui -source {tcl}\n".format(
-        cmd = toolchain_info.cmd,
-        tcl = tcl_script.short_path,
-    )
-
-    ctx.actions.write(
-        output = runner,
-        content = script_content,
-        is_executable = True,
-    )
+    runner = _write_gui_runner(ctx, toolchain_info, tcl_script)
 
     inputs.append(tcl_script)
 
@@ -409,20 +415,7 @@ def vivado_dcp_gui(ctx, toolchain_info):
     )
 
     # Generate bash script
-    runner = ctx.actions.declare_file(ctx.label.name + "_runner.sh")
-    script_content = "#!/bin/bash\n"
-    if toolchain_info.setup_cmd:
-        script_content += toolchain_info.setup_cmd + "\n"
-    script_content += "{cmd} -mode gui -source {tcl}\n".format(
-        cmd = toolchain_info.cmd,
-        tcl = tcl_script.short_path,
-    )
-
-    ctx.actions.write(
-        output = runner,
-        content = script_content,
-        is_executable = True,
-    )
+    runner = _write_gui_runner(ctx, toolchain_info, tcl_script)
 
     return [
         DefaultInfo(
