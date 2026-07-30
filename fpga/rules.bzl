@@ -1,10 +1,10 @@
-load("//fpga:providers.bzl", "FpgaSourceInfo", "FpgaProjectInfo", "FpgaSynthesisInfo", "FpgaImplementationInfo", "FpgaBitstreamInfo")
+load("//fpga:providers.bzl", "FpgaSourceInfo", "FpgaProjectInfo", "FpgaSynthesisInfo", "FpgaImplementationInfo", "FpgaBitstreamInfo", "FpgaIpInfo", "FpgaClockDomainInfo")
 load("//fpga:toolchain.bzl", "FpgaToolchainInfo")
 load("//fpga:flags.bzl", "fpga_toolchain_transition")
 load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo")
 
 
-def _collect_sources(ctx):
+def collect_sources(ctx):
     # (keeping the same logic but ensuring it's accessible)
     vhdl_libs = []
     verilog_srcs = []
@@ -42,7 +42,7 @@ def _collect_sources(ctx):
 
 def _fpga_project_impl(ctx):
     toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
-    source_info = _collect_sources(ctx)
+    source_info = collect_sources(ctx)
     return toolchain.create_project(ctx, toolchain, source_info)
 
 fpga_project = rule(
@@ -72,7 +72,7 @@ def _fpga_synthesis_impl(ctx):
     if project_info:
         source_info = project_info.sources
     else:
-        source_info = _collect_sources(ctx)
+        source_info = collect_sources(ctx)
 
     return toolchain.synthesis(
         ctx,
@@ -315,3 +315,64 @@ def fpga_flow(
         toolchain = toolchain,
         tags = ["manual"],
     )
+
+def _fpga_clock_domain_impl(ctx):
+    return [
+        FpgaClockDomainInfo(
+            clock_pin = ctx.attr.clock_pin,
+            clock_frequency = ctx.attr.clock_frequency,
+            reset_pin = ctx.attr.reset_pin,
+            reset_type = ctx.attr.reset_type,
+        ),
+    ]
+
+fpga_clock_domain = rule(
+    implementation = _fpga_clock_domain_impl,
+    attrs = {
+        "clock_pin": attr.string(mandatory = True),
+        "clock_frequency": attr.string(default = ""),
+        "reset_pin": attr.string(mandatory = True),
+        "reset_type": attr.string(default = "active_low"),
+    },
+)
+
+def _fpga_ip_config_impl(ctx):
+    sources = collect_sources(ctx)
+    
+    inst_tcl = None
+    for f in ctx.files.srcs:
+        if f.basename.startswith("vivado_inst") and f.basename.endswith(".tcl"):
+            inst_tcl = f
+            break
+            
+    clock_domain = None
+    if ctx.attr.clock_domain:
+        clock_domain = ctx.attr.clock_domain[FpgaClockDomainInfo]
+        
+    return [
+        FpgaIpInfo(
+            entity_name = ctx.attr.entity_name,
+            instance_name = ctx.attr.instance_name,
+            generics = ctx.attr.generics,
+            sources = sources,
+            memory_mapping = ctx.attr.memory_mapping,
+            ooc = ctx.attr.ooc,
+            inst_tcl = inst_tcl,
+            clock_domain = clock_domain,
+        ),
+    ]
+
+fpga_ip_config = rule(
+    implementation = _fpga_ip_config_impl,
+    attrs = {
+        "entity_name": attr.string(mandatory = True),
+        "instance_name": attr.string(mandatory = True),
+        "generics": attr.string_dict(default = {}),
+        "memory_mapping": attr.string(default = ""),
+        "ooc": attr.bool(default = True),
+        "clock_domain": attr.label(providers = [FpgaClockDomainInfo]),
+        "srcs": attr.label_list(allow_files = True),
+        "deps": attr.label_list(),
+        "constraints": attr.label_list(allow_files = True),
+    },
+)

@@ -43,3 +43,27 @@ FpgaBitstreamInfo = provider(
         "platform": "Hardware export file for software toolchains (.hdf, .xsa)",
     },
 )
+
+FpgaClockDomainInfo = provider(
+    doc = "Structured clock domain metadata.",
+    fields = {
+        "clock_pin": "String: Clock pin object.",
+        "clock_frequency": "String: Clock frequency.",
+        "reset_pin": "String: Reset pin object.",
+        "reset_type": "String: active_low or active_high.",
+    },
+)
+
+FpgaIpInfo = provider(
+    doc = "Configuration metadata for an Out-of-Context FPGA IP module.",
+    fields = {
+        "entity_name": "The name of the IP's top-level entity/module.",
+        "instance_name": "The unique instance name used inside the top-level design.",
+        "generics": "Dictionary of generic parameter configurations.",
+        "sources": "FpgaSourceInfo: RTL and constraint files for the IP.",
+        "memory_mapping": "Optional memory mapping details (e.g., register specifications).",
+        "ooc": "Boolean flag determining if out-of-context synthesis is needed.",
+        "inst_tcl": "File: Optional TCL script template for BD instantiation.",
+        "clock_domain": "FpgaClockDomainInfo: Optional reference clock domain info.",
+    },
+)

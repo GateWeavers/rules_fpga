@@ -1,0 +1,3 @@
+load(":vivado_design_test.bzl", "vivado_design_test_suite")
+
+vivado_design_test_suite(name = "vivado_design")

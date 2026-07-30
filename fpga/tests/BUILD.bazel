@@ -1,0 +1,3 @@
+load(":ip_config_test.bzl", "ip_config_test_suite")
+
+ip_config_test_suite(name = "ip_config")
