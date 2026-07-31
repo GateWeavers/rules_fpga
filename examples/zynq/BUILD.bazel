@@ -1,0 +1,50 @@
+load("//fpga:rules.bzl", "fpga_clock_domain", "fpga_ip_config")
+load("//vivado:rules.bzl", "vivado_design")
+
+fpga_clock_domain(
+    name = "main_clk",
+    clock_pin = "get_bd_pins processing_system7_0/FCLK_CLK0",
+    clock_frequency = "100MHz",
+    reset_pin = "get_bd_pins processing_system7_0/FCLK_RESET0_N",
+    reset_type = "active_low",
+)
+
+fpga_ip_config(
+    name = "crc_0",
+    entity_name = "crc_top_wrapper",
+    instance_name = "crc_0",
+    generics = {"C_S_AXI_ADDR_WIDTH": "7"},
+    memory_mapping = "SEG_CRC=0x43DB0000,SEG_CRC_DMA=0x43DC0000,S2MM_DMA=0x00000000",
+    clock_domain = ":main_clk",
+    ooc = False,
+    srcs = [
+        "//examples/zynq/ip/ip-crc/src:src",
+        "//examples/zynq/ip/ip-crc/src:vivado_inst_crc.tcl",
+    ],
+    tags = ["manual"],
+)
+
+fpga_ip_config(
+    name = "crc",
+    entity_name = "crc_top_wrapper",
+    instance_name = "crc",
+    # generics = {"C_S_AXI_ADDR_WIDTH": "6"},
+    memory_mapping = "SEG_CRC=0x43D90000,SEG_CRC_DMA=0x43D60000,S2MM_DMA=0x00000000",
+    clock_domain = ":main_clk",
+    ooc = False,
+    srcs = [
+        "//examples/zynq/ip/ip-crc/src:src",
+        "//examples/zynq/ip/ip-crc/src:vivado_inst_crc.tcl",
+    ],
+    tags = ["manual"],
+)
+
+vivado_design(
+    name = "zynq_design",
+    ip_configs = [
+        ":crc_0",
+        ":crc",
+    ],
+    top = "zynq_top",
+    part = "xc7z020clg400-1",
+)

@@ -117,10 +117,14 @@ def _generate_bd_instantiation(ctx, non_ooc_groups):
     
     # Source each unique instantiation script once
     bd_tcl_content += "# Source VHDL module instantiation procedures:\n"
+    sourced = {}
     for h, group in non_ooc_groups.items():
         if group["inst_tcl"]:
-            bd_tcl_content += "source {}\n".format(group["inst_tcl"].path)
-            bd_inputs.append(group["inst_tcl"])
+            path = group["inst_tcl"].path
+            if path not in sourced:
+                bd_tcl_content += "source {}\n".format(path)
+                bd_inputs.append(group["inst_tcl"])
+                sourced[path] = True
     bd_tcl_content += "\n# Instantiate cells:\n"
     
     # Call the instantiation procedure for each cell instance
@@ -146,19 +150,36 @@ def _generate_memory_mapping(ctx, non_ooc_groups):
     mem_map_tcl = ctx.actions.declare_file(ctx.label.name + "_memory_mapping.tcl")
     mem_tcl_content = "# Memory Mapping Script\n\n"
     mem_tcl_content += "# Source VHDL module procedures:\n"
+    sourced = {}
     for h, group in non_ooc_groups.items():
         if group["inst_tcl"]:
-            mem_tcl_content += "source {}\n".format(group["inst_tcl"].path)
+            path = group["inst_tcl"].path
+            if path not in sourced:
+                mem_tcl_content += "source {}\n".format(path)
+                sourced[path] = True
     mem_tcl_content += "\n# Memory mapping configurations:\n"
     
     for h, group in non_ooc_groups.items():
         if not group["inst_tcl"] or not group["memory_mapping"]:
             continue
-        segments = [seg.strip() for seg in group["memory_mapping"].split(",") if seg.strip()]
-        if segments:
-            segment_args = "[list {}]".format(" ".join(["\"{}\"".format(seg) for seg in segments]))
-            for inst in group["instances"]:
-                mem_tcl_content += "vivado_memory_mapping_{} \"{}\" {}\n".format(group["entity_name"], inst, segment_args)
+            
+        segments_list = []
+        for seg in group["memory_mapping"].split(","):
+            seg = seg.strip()
+            if not seg:
+                continue
+            if "=" in seg:
+                parts = seg.split("=", 1)
+                k = parts[0].strip()
+                v = parts[1].strip()
+            else:
+                k = seg
+                v = ""
+            segments_list.append("\"{}\" \"{}\"".format(k, v))
+            
+        segment_args = "[list {}]".format(" ".join(segments_list))
+        for inst in group["instances"]:
+            mem_tcl_content += "vivado_memory_mapping_{} \"{}\" {}\n".format(group["entity_name"], inst, segment_args)
                 
     ctx.actions.write(
         output = mem_map_tcl,

@@ -52,7 +52,7 @@ def _vivado_design_test_impl(ctx):
     # Check memory mapping script content
     mem_content = mem_action.content
     asserts.true(env, "source vivado/tests/vivado_inst_my_module.tcl\n" in mem_content, "Should source the instantiation script exactly once")
-    asserts.true(env, "vivado_memory_mapping_my_module \"u_module_inst\" [list \"seg1\" \"seg2\"]\n" in mem_content, "Should call vivado_memory_mapping_my_module procedure with correct args")
+    asserts.true(env, "vivado_memory_mapping_my_module \"u_module_inst\" [list \"seg1\" \"\" \"seg2\" \"\"]\n" in mem_content, "Should call vivado_memory_mapping_my_module procedure with correct args")
     
     # Check clock domain script content
     clk_content = clk_action.content
