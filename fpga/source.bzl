@@ -42,7 +42,7 @@ def classify_files(files):
     """Splits files by extension. Unknown extensions are kept as `data`."""
     vhdl, verilog, headers, constraints, data = [], [], [], [], []
     for f in files:
-        ext = f.extension
+        ext = f.extension.lower()
         if ext in _VHDL:
             vhdl.append(f)
         elif ext in _VERILOG:
@@ -206,8 +206,8 @@ def to_vhdl_library_info(src):
 def _fpga_sources_impl(ctx):
     src = collect_sources(
         ctx,
-        srcs = ctx.attr.srcs,
-        constraints = ctx.attr.constraints,
+        srcs = ctx.files.srcs,
+        constraints = ctx.files.constraints,
         deps = ctx.attr.deps,
         library_name = ctx.attr.library_name,
         vhdl_version = ctx.attr.vhdl_version,

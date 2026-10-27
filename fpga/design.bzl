@@ -66,7 +66,7 @@ def _hdl_name(base, tag, key):
     # Stable across unrelated edits, so an unchanged instance keeps its name
     # (and its cached OOC synthesis). hash() is only 32 bits: collisions are
     # detected by _claim_name.
-    return "%s_%s_%08x" % (base, tag, hash(key) & 0xffffffff)
+    return "%s_%s_%x" % (base, tag, hash(key) & 0xffffffff)
 
 def _claim_name(ctx, claimed, name, key):
     prev = claimed.get(name)
@@ -195,7 +195,7 @@ def fpga_ip_config(
     generics = generics or {}
     fpga_ip(
         name = name + "_ip",
-        required_generics = sorted(generics.keys()),
+        generics = generics,
         visibility = visibility,
         tags = tags,
         **ip_kwargs

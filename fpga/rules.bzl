@@ -14,14 +14,23 @@ load(
 load("//fpga:toolchain.bzl", "FpgaToolchainInfo")
 load("//fpga:flags.bzl", "fpga_toolchain_transition")
 load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo", "VhdlLibraryUnitInfo")
-load("//fpga:source.bzl","collect_sources")
+load("//fpga:source.bzl", "collect_sources", _fpga_sources = "fpga_sources")
+load(
+    "//fpga:design.bzl",
+    _fpga_clock_domain = "fpga_clock_domain",
+    _fpga_design = "fpga_design",
+    _fpga_ip = "fpga_ip",
+    _fpga_ip_config = "fpga_ip_config",
+    _fpga_ip_inst = "fpga_ip_inst",
+)
+load("//fpga:common.bzl", "SOURCE_ATTRS", "TOOLCHAIN_ATTRS", "TOOLCHAIN_TYPE", "VHDL_VERSIONS")
 
-load("//fpga:design.bzl","fpga_design")
-# ,"fpga_clock_domain", "fpga_ip_config")
-load("//fpga:common.bzl","SOURCE_ATTRS","TOOLCHAIN_ATTRS","TOOLCHAIN_TYPE","VHDL_VERSIONS")
-# fpga_design = fpga_design
-# fpga_clock_domain = fpga_clock_domain
-# fpga_ip_config = fpga_ip_config
+fpga_clock_domain = _fpga_clock_domain
+fpga_ip = _fpga_ip
+fpga_ip_inst = _fpga_ip_inst
+fpga_ip_config = _fpga_ip_config
+fpga_design = _fpga_design
+fpga_sources = _fpga_sources
 
 
 def _own_sources(ctx, extra_deps = []):

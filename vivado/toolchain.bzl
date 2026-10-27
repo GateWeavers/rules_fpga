@@ -1,5 +1,5 @@
 load("//fpga:toolchain.bzl", "FpgaToolchainInfo")
-load(":vivado.bzl", "vivado_create_project", "vivado_synthesis", "vivado_implementation", "vivado_bitstream", "vivado_project_gui", "vivado_dcp_gui")
+load(":vivado.bzl", "vivado_create_project", "vivado_generate_design", "vivado_synthesis", "vivado_implementation", "vivado_bitstream", "vivado_project_gui", "vivado_dcp_gui")
 
 def _vivado_toolchain_impl(ctx):
     return [
@@ -9,6 +9,7 @@ def _vivado_toolchain_impl(ctx):
                 setup_cmd = ctx.attr.setup_cmd,
                 cmd = ctx.attr.cmd,
                 create_project = vivado_create_project,
+                generate_design = vivado_generate_design,
                 synthesis = vivado_synthesis,
                 implementation = vivado_implementation,
                 bitstream = vivado_bitstream,
@@ -19,6 +20,7 @@ def _vivado_toolchain_impl(ctx):
                     synthesis = ctx.file.synthesis_tpl,
                     implementation = ctx.file.implementation_tpl,
                     bitstream = ctx.file.bitstream_tpl,
+                    clock_domain = ctx.file.clock_domain_tpl,
                 ),
             ),
         ),
@@ -33,5 +35,6 @@ vivado_toolchain = rule(
         "synthesis_tpl": attr.label(allow_single_file = [".tcl"], default = "//vivado/templates:synthesis.tcl"),
         "implementation_tpl": attr.label(allow_single_file = [".tcl"], default = "//vivado/templates:implementation.tcl"),
         "bitstream_tpl": attr.label(allow_single_file = [".tcl"], default = "//vivado/templates:bitstream.tcl"),
+        "clock_domain_tpl": attr.label(allow_single_file = [".tcl"], default = "//vivado/templates:clock_domain.tcl"),
     },
 )

@@ -1,25 +1,6 @@
 # ------------------------------------------------------------
 # Procedure: connect_axi_lite
 # ------------------------------------------------------------
-# Creates:
-#   - an AXI Interconnect (axi_interconnect) configured for N slave ports
-#   - proc_sys_reset (synchronous reset sync) driven by ref clock/reset
-# Then connects:
-#   - each IP inst/S_AXI -> interconnect/Sxx_AXI
-#   - interconnect ACLK/ARESETN -> proc_sys_reset outputs and ref clock
-#   - each IP clock/reset pins -> ref clock and proc_sys_reset output
-#
-# Inputs:
-#   ip_insts_list      : list of BD cell instance names for AXI-Lite slaves
-#   ref_clk_pin        : BD pin object for the reference clock (e.g. get_bd_pins /clk_wiz_0/clk_out1)
-#   ref_rst_pin        : BD pin object for the (external) reset input to proc_sys_reset (active high or low depends on CONFIG)
-#   axi_clk_pin_name   : name of clock pin on each IP instance (e.g. "s_axi_aclk")
-#   axi_aresetn_pin_name: name of reset pin on each IP instance (e.g. "s_axi_aresetn")
-#   axi_ic_name        : name for the created AXI interconnect cell
-#   proc_reset_name    : name for the created proc_sys_reset cell
-#   axi_intf_pin_name  : AXI-Lite slave interface pin name on each IP (default "S_AXI")
-#   s_reset_active_low : set 1 if ref_rst_pin is active-low, 0 if active-high
-#
 proc connect_axi_lite { \
     ip_insts_list \
     ref_clk_pin \
@@ -28,32 +9,34 @@ proc connect_axi_lite { \
     {axi_aresetn_pin_name "s_axi_aresetn"} \
     {axi_ic_name "axi_lite_interconnect_0"} \
     {proc_reset_name "proc_sys_reset_0"} \
-    {axi_intf_pin_name "S_AXI"} \
+    {axi_intf_patterns {"S_AXI" "S_AXI_LITE"}} \
     {s_reset_active_low 1} \
 } {
-    # -------------------- Basic checks --------------------
     if {[llength $ip_insts_list] < 1} {
         error "ip_insts_list is empty."
     }
 
-    # -------------------- Create AXI interconnect --------------------
-    # Note: This is the IP Integrator interconnect used to connect masters->slaves.
-    # In your case, the "external master M_AXI" side is assumed to exist elsewhere;
-    # this procedure builds the interconnect and wires slaves.
-    #
-    # If your Vivado build fails because CONFIG.NUM_SI / variant differs,
-    # run again and paste the exact error—CONFIG field name can differ by version/VC.
+    set found_slave_intfs [list]
+    foreach inst $ip_insts_list {
+        foreach pattern $axi_intf_patterns {
+            set intfs [get_bd_intf_pins -quiet -filter {MODE == "Slave"} ${inst}/${pattern}]
+            foreach intf $intfs {
+                if {[lsearch -exact $found_slave_intfs $intf] == -1} {
+                    lappend found_slave_intfs $intf
+                }
+            }
+        }
+    }
+
+    set num_slaves [llength $found_slave_intfs]
+    if {$num_slaves < 1} {
+        error "WARNING: no AXI Slave Found in : $ip_insts_list with pattern $axi_intf_patterns"
+        return
+    }
+
     set ic_cell [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect $axi_ic_name]
+    set_property -dict [list CONFIG.NUM_SI 1 CONFIG.NUM_MI $num_slaves] $ic_cell
 
-    set num_slaves [llength $ip_insts_list]
-
-    # Configure number of slave interfaces.
-    # (May require adjustment if your interconnect preset uses different config fields.)
-    set_property -dict [list CONFIG.NUM_SI $num_slaves] $ic_cell
-
-    # Typical pin names on axi_interconnect:
-    #   - ACLK
-    #   - ARESETN
     set ic_aclk    [get_bd_pins ${axi_ic_name}/ACLK]
     set ic_aresetn [get_bd_pins ${axi_ic_name}/ARESETN]
 
@@ -61,71 +44,141 @@ proc connect_axi_lite { \
         error "Could not find ${axi_ic_name}/ACLK or ${axi_ic_name}/ARESETN pins."
     }
 
-    # -------------------- Create synchronous reset block (proc_sys_reset) --------------------
     set rst_cell [create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset $proc_reset_name]
 
-    # Typical proc_sys_reset ports:
-    #   - slowest_sync_clk
-    #   - ext_reset_in
-    #   - peripheral_aresetn
-    #
-    # Also, connect reset sync output to both interconnect and AXI peripherals.
     set psr_clk    [get_bd_pins ${proc_reset_name}/slowest_sync_clk]
     set psr_extrst [get_bd_pins ${proc_reset_name}/ext_reset_in]
     set psr_periph_aresetn [get_bd_pins ${proc_reset_name}/peripheral_aresetn]
 
     if {[llength $psr_clk] == 0 || [llength $psr_extrst] == 0 || [llength $psr_periph_aresetn] == 0} {
-        error "Could not find proc_sys_reset expected pins (slowest_sync_clk/ext_reset_in/peripheral_aresetn)."
+        error "Could not find proc_sys_reset expected pins."
     }
 
-    # Configure polarity of ext_reset_in / output (active low).
-    # proc_sys_reset uses CONFIG.C_EXT_RESET_HIGH to interpret ext_reset_in polarity.
-    # If your ref_rst_pin is active-low (default), ext_reset_in is low when asserted => C_EXT_RESET_HIGH {0}.
-    set c_ext_reset_high [expr {$s_reset_active_low ? 0 : 1}]
-    set_property CONFIG.C_EXT_RESET_HIGH $c_ext_reset_high $rst_cell
+    catch {
+        set c_ext_reset_high [expr {$s_reset_active_low ? 0 : 1}]
+        set_property CONFIG.C_EXT_RESET_HIGH $c_ext_reset_high $rst_cell
+    }
 
-    # Clock/reset wiring into proc_sys_reset
-    connect_bd_net $ref_clk_pin $psr_clk
-    connect_bd_net $ref_rst_pin $psr_extrst
+    if {[llength $ref_clk_pin] == 0} {
+        if {[llength [get_bd_ports -quiet sys_clk]] == 0} {
+            set ref_clk_pin [create_bd_port -dir I -type clk -freq_hz 100000000 sys_clk]
+        } else {
+            set ref_clk_pin [get_bd_ports sys_clk]
+        }
+    }
+    if {[llength $ref_rst_pin] == 0} {
+        if {[llength [get_bd_ports -quiet sys_rst_n]] == 0} {
+            set ref_rst_pin [create_bd_port -dir I -type rst sys_rst_n]
+        } else {
+            set ref_rst_pin [get_bd_ports sys_rst_n]
+        }
+    }
 
-    # -------------------- Connect interconnect clock/reset --------------------
-    connect_bd_net $ref_clk_pin $ic_aclk
-    connect_bd_net $psr_periph_aresetn $ic_aresetn
+    connect_bd_net -quiet $ref_clk_pin $psr_clk
+    connect_bd_net -quiet $ref_rst_pin $psr_extrst
 
-    # -------------------- Connect each IP's S_AXI to interconnect Sxx_AXI and wire clock/reset --------------------
+    if {[llength $ref_clk_pin] > 0} {
+        connect_bd_net -quiet $ref_clk_pin [get_bd_pins ${axi_ic_name}/*ACLK*]
+    }
+    connect_bd_net -quiet $psr_periph_aresetn [get_bd_pins ${axi_ic_name}/*ARESETN*]
+
+    # connect AXI slave interfaces
     set idx 0
-    foreach inst $ip_insts_list {
-        # IP AXI interface pin
-        set ip_axi_intf [get_bd_intf_pins ${inst}/${axi_intf_pin_name}]
-        if {[llength $ip_axi_intf] == 0} {
-            error "Could not find ${inst}/${axi_intf_pin_name} intf pin."
-        }
-
-        # IP clock/reset pins (per your statement: same as provided ref clock/reset pins)
-        set ip_aclk     [get_bd_pins ${inst}/${axi_clk_pin_name}]
-        set ip_aresetn  [get_bd_pins ${inst}/${axi_aresetn_pin_name}]
-        if {[llength $ip_aclk] == 0 || [llength $ip_aresetn] == 0} {
-            error "Could not find ${inst}/${axi_clk_pin_name} or ${inst}/${axi_aresetn_pin_name} pins."
-        }
-
-        # interconnect slave interface pin names: S00_AXI, S01_AXI, ...
-        set ic_s_if "S[format %02d $idx]_AXI"
-        set ic_slave_intf [get_bd_intf_pins ${axi_ic_name}/${ic_s_if}]
-        if {[llength $ic_slave_intf] == 0} {
-            error "Could not find ${axi_ic_name}/${ic_s_if} interconnect slave interface pin."
-        }
-
-        # Connect AXI-Lite interface (slave wiring)
-        connect_bd_intf_net -quiet $ic_slave_intf $ip_axi_intf
-
-        # Connect clocks and resets to the IP
-        connect_bd_net $ref_clk_pin $ip_aclk
-        connect_bd_net $psr_periph_aresetn $ip_aresetn
-
+    foreach ip_axi_intf $found_slave_intfs {
+        set ic_m_if "M[format %02d $idx]_AXI"
+        set ic_master_intf [get_bd_intf_pins ${axi_ic_name}/${ic_m_if}]
+        connect_bd_intf_net -quiet $ic_master_intf $ip_axi_intf
         incr idx
     }
 
-    # (Optional) Layout/validation
-    # regenerate_bd_layout
-    # validate_bd_design
+    # connect clk an reset pins for each IPs
+    foreach inst $ip_insts_list {
+        set ip_aclk    [get_bd_pins -quiet ${inst}/${axi_clk_pin_name}]
+        set ip_aresetn [get_bd_pins -quiet ${inst}/${axi_aresetn_pin_name}]
+
+        if {[llength $ref_clk_pin] > 0 && [llength $ip_aclk] > 0} {
+            connect_bd_net -quiet $ref_clk_pin $ip_aclk
+        }
+        if {[llength $ip_aresetn] > 0 && [llength $ip_aresetn] > 0} {
+            connect_bd_net -quiet $psr_periph_aresetn $ip_aresetn
+        }
+    }
+}
+
+# Helper script for user
+proc connect_master_to_interconnect {master_intf_pin {axi_ic_name "axi_lite_interconnect_0"} {slave_idx 0}} {
+    set ic_s_if "S[format %02d $slave_idx]_AXI"
+    set ic_slave_intf [get_bd_intf_pins ${axi_ic_name}/${ic_s_if}]
+    if {[llength $ic_slave_intf] > 0 && [llength $master_intf_pin] > 0} {
+        connect_bd_intf_net -quiet $master_intf_pin $ic_slave_intf
+    }
+}
+
+proc connect_axi_masters_to_smartconnect { \
+    ip_insts_list \
+    ref_clk_pin \
+    ref_rst_pin \
+    {axi_intf_pattern "M_AXI*"} \
+    {sc_name "axi_smartconnect_0"} \
+    {num_mi 1} \
+} {
+
+    set found_master_intfs [list]
+
+    foreach inst $ip_insts_list {
+        # Find if the IP has an AXI master interface that matches a given pattern
+        set intfs [get_bd_intf_pins -quiet -filter {MODE == "Master"} ${inst}/${axi_intf_pattern}]
+
+        # Fallback
+        if {[llength $intfs] == 0} {
+            set intfs [get_bd_intf_pins -quiet -filter {MODE == "Master"} ${inst}/*]
+        }
+
+        foreach intf $intfs {
+            lappend found_master_intfs $intf
+        }
+    }
+
+    set num_masters [llength $found_master_intfs]
+
+    if {$num_masters < 1} {
+        puts "WARNING: No AXI master found in the list of IPs : $ip_insts_list"
+        return [list]
+    }
+
+    # create smartconnect instance
+    set sc_cell [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 $sc_name]
+    set_property -dict [list \
+        CONFIG.NUM_SI $num_masters \
+        CONFIG.NUM_MI $num_mi \
+    ] $sc_cell
+
+    set sc_aclk    [get_bd_pins ${sc_name}/aclk]
+    set sc_aresetn [get_bd_pins ${sc_name}/aresetn]
+
+    if {[llength $ref_clk_pin] > 0 && [llength $sc_aclk] > 0} {
+        connect_bd_net -quiet $ref_clk_pin $sc_aclk
+    }
+    if {[llength $ref_rst_pin] > 0 && [llength $sc_aresetn] > 0} {
+        connect_bd_net -quiet $ref_rst_pin $sc_aresetn
+    }
+
+    # Connect M_AXI interface to the smartconnect Sxx_AXI
+    set idx 0
+    foreach src_master_intf $found_master_intfs {
+        set sc_s_if "S[format %02d $idx]_AXI"
+        set sc_slave_intf [get_bd_intf_pins ${sc_name}/${sc_s_if}]
+
+        connect_bd_intf_net -quiet $src_master_intf $sc_slave_intf
+        incr idx
+    }
+
+    # output pins created to be used by users
+    set m_pins [list]
+    for {set i 0} {$i < $num_mi} {incr i} {
+        set sc_m_if "M[format %02d $i]_AXI"
+        lappend m_pins [get_bd_intf_pins ${sc_name}/${sc_m_if}]
+    }
+
+    return $m_pins
 }
