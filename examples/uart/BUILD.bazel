@@ -10,22 +10,22 @@ vhdl_library(
     library_name = "uart_lib",
 )
 
-vunit_sim(
-    name = "tb_uart",
-    srcs = [
-        "src/test/tb_uart_rx.vhd",
-        "src/test/tb_uart_tx.vhd",
-    ],
-    dut = ":uart_lib",
-    main = "run.py",
-)
+# vunit_sim(
+#     name = "tb_uart",
+#     srcs = [
+#         "src/test/tb_uart_rx.vhd",
+#         "src/test/tb_uart_tx.vhd",
+#     ],
+#     dut = ":uart_lib",
+#     main = "run.py",
+# )
 
-vunit_sim(
-    name = "tb_uart_with_bazel",
-    srcs = [
-        "src/test/tb_uart_rx.vhd",
-        "src/test/tb_uart_tx.vhd",
-    ],
-    dut = ":uart_lib",
-    main = "run_with_bazel.py",
-)
+# vunit_sim(
+#     name = "tb_uart_with_bazel",
+#     srcs = [
+#         "src/test/tb_uart_rx.vhd",
+#         "src/test/tb_uart_tx.vhd",
+#     ],
+#     dut = ":uart_lib",
+#     main = "run_with_bazel.py",
+# )

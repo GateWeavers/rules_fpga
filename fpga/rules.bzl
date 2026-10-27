@@ -1,114 +1,108 @@
-load("//fpga:providers.bzl", "FpgaSourceInfo", "FpgaProjectInfo", "FpgaSynthesisInfo", "FpgaImplementationInfo", "FpgaBitstreamInfo", "FpgaIpInfo", "FpgaClockDomainInfo")
+load(
+    "//fpga:providers.bzl",
+    "ConstraintInfo",
+    "FpgaBitstreamInfo",
+    "FpgaClockDomainInfo",
+    "FpgaDesignInfo",
+    "FpgaImplementationInfo",
+    "FpgaIpInfo",
+    "FpgaProjectInfo",
+    "FpgaSourceInfo",
+    "FpgaSynthesisInfo",
+    "VerilogInfo",
+)
 load("//fpga:toolchain.bzl", "FpgaToolchainInfo")
 load("//fpga:flags.bzl", "fpga_toolchain_transition")
-load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo")
+load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo", "VhdlLibraryUnitInfo")
+load("//fpga:source.bzl","collect_sources")
+
+load("//fpga:design.bzl","fpga_design")
+# ,"fpga_clock_domain", "fpga_ip_config")
+load("//fpga:common.bzl","SOURCE_ATTRS","TOOLCHAIN_ATTRS","TOOLCHAIN_TYPE","VHDL_VERSIONS")
+# fpga_design = fpga_design
+# fpga_clock_domain = fpga_clock_domain
+# fpga_ip_config = fpga_ip_config
 
 
-def collect_sources(ctx):
-    # (keeping the same logic but ensuring it's accessible)
-    vhdl_libs = []
-    verilog_srcs = []
-    constraints = []
-
-    for dep in ctx.attr.deps:
-        if VhdlLibraryInfo in dep:
-            info = dep[VhdlLibraryInfo]
-            print(info)
-
-            for lib_struct in info.libraries.values():
-                vhdl_libs.append(struct(
-                    library = lib_struct.library_name,
-                    sources = lib_struct.sources,
-                    vhdl_version = lib_struct.vhdl_version,
-                ))
-        elif FpgaSourceInfo in dep:
-            # Propagate sources from other FPGA rules if needed
-            pass
-
-    for f in ctx.files.srcs:
-        if f.extension == "v" or f.extension == "sv":
-            verilog_srcs.append(f)
-        elif f.extension == "xdc" or f.extension == "sdc":
-            constraints.append(f)
-
-    print(vhdl_libs)
-
-    return FpgaSourceInfo(
-        vhdl_libs = vhdl_libs,
-        verilog_srcs = depset(verilog_srcs),
-        constraints = depset(constraints + ctx.files.constraints),
+def _own_sources(ctx, extra_deps = []):
+    return collect_sources(
+        ctx,
+        srcs = ctx.files.srcs,
+        constraints = ctx.files.constraints,
+        deps = ctx.attr.deps + extra_deps,
+        library_name = ctx.attr.library_name,
+        vhdl_version = ctx.attr.vhdl_version,
     )
 
 
 def _fpga_project_impl(ctx):
-    toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
-    source_info = collect_sources(ctx)
-    return toolchain.create_project(ctx, toolchain, source_info)
+    toolchain = ctx.toolchains[TOOLCHAIN_TYPE].fpga_info
+
+    # design BD scripts are provided by FpgaDesignInfo if present.
+    design = ctx.attr.design
+    design_info = design[FpgaDesignInfo] if design else None
+    source_info = _own_sources(ctx, [design] if design else [])
+
+    return toolchain.create_project(ctx, toolchain, source_info, design_info)
 
 fpga_project = rule(
     implementation = _fpga_project_impl,
-    attrs = {
-        "srcs": attr.label_list(allow_files = True),
-        "deps": attr.label_list(),
-        "constraints": attr.label_list(allow_files = True),
-        "part": attr.string(mandatory = True),
-        "top": attr.string(),
-        "fpga_toolchain": attr.string(),
-        "fpga_toolchain_version": attr.string(),
-        "toolchain": attr.label(),
-        "_allowlist_function_transition": attr.label(
-            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+    doc = "Creates an FPGA project from sources and an optional generated design.",
+    attrs = dict(
+        SOURCE_ATTRS,
+        design = attr.label(
+            providers = [[FpgaDesignInfo, FpgaSourceInfo]],
+            doc = "Optional fpga_design whose block design script is sourced by the project.",
         ),
-    },
+        part = attr.string(mandatory = True),
+        top = attr.string(),
+        top_bd_script = attr.label(allow_files = True),
+        **TOOLCHAIN_ATTRS
+    ),
     cfg = fpga_toolchain_transition,
-    toolchains = ["//fpga:toolchain_type"],
+    toolchains = [TOOLCHAIN_TYPE],
 )
 
 def _fpga_synthesis_impl(ctx):
-    toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
-    project_info = ctx.attr.project[FpgaProjectInfo] if ctx.attr.project else None
+    toolchain = ctx.toolchains[TOOLCHAIN_TYPE].fpga_info
 
-    #todo review collect sources logic and separation between fpga generic logic and toolchain specific logic.
-    if project_info:
-        source_info = project_info.sources
+    has_own_sources = bool(ctx.files.srcs or ctx.files.constraints or ctx.attr.deps)
+    if ctx.attr.project:
+        if has_own_sources:
+            fail(("%s: 'project' is mutually exclusive with srcs/constraints/deps; " +
+                  "sources come from the project.") % ctx.label)
+        source_info = ctx.attr.project[FpgaProjectInfo].sources
     else:
-        source_info = collect_sources(ctx)
+        source_info = _own_sources(ctx)
 
-    return toolchain.synthesis(
-        ctx,
-        toolchain,
-        source_info,
-    )
+    return toolchain.synthesis(ctx, toolchain, source_info)
 
 fpga_synthesis = rule(
     implementation = _fpga_synthesis_impl,
-    attrs = {
-        "srcs": attr.label_list(allow_files = True),
-        "deps": attr.label_list(),
-        "constraints": attr.label_list(allow_files = True),
-        "project": attr.label(providers = [FpgaProjectInfo]),
-        "top": attr.string(mandatory = True),
-        "part": attr.string(mandatory = True),
-        "fpga_toolchain": attr.string(),
-        "fpga_toolchain_version": attr.string(),
-        "toolchain": attr.label(),
-        "generics": attr.string_dict(default = {}),
-        "defines": attr.string_dict(default = {}),
-        "max_threads": attr.int(),
-        "memory": attr.int(),
-        "synth_options": attr.string_list(default = []),
-        "pre_synth_tcl": attr.label(allow_single_file = [".tcl"]),
-        "post_synth_tcl": attr.label(allow_single_file = [".tcl"]),
-        "_allowlist_function_transition": attr.label(
-            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+    doc = "Synthesizes either an fpga_project, or standalone sources (in-memory project).",
+    attrs = dict(
+        SOURCE_ATTRS,
+        project = attr.label(
+            providers = [FpgaProjectInfo],
+            doc = "Mutually exclusive with srcs/constraints/deps.",
         ),
-    },
+        top = attr.string(mandatory = True),
+        part = attr.string(mandatory = True),
+        generics = attr.string_dict(),
+        defines = attr.string_dict(),
+        max_threads = attr.int(default = 4),
+        memory = attr.int(default = 4000),
+        synth_options = attr.string_list(),
+        pre_synth_tcl = attr.label(allow_single_file = [".tcl"]),
+        post_synth_tcl = attr.label(allow_single_file = [".tcl"]),
+        **TOOLCHAIN_ATTRS
+    ),
     cfg = fpga_toolchain_transition,
-    toolchains = ["//fpga:toolchain_type"],
+    toolchains = [TOOLCHAIN_TYPE],
 )
 
 def _fpga_implementation_impl(ctx):
-    toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
+    toolchain = ctx.toolchains[TOOLCHAIN_TYPE].fpga_info
     return toolchain.implementation(ctx, toolchain)
 
 fpga_implementation = rule(
@@ -120,8 +114,8 @@ fpga_implementation = rule(
         "fpga_toolchain": attr.string(),
         "fpga_toolchain_version": attr.string(),
         "toolchain": attr.label(),
-        "max_threads": attr.int(),
-        "memory": attr.int(),
+        "max_threads": attr.int(default = 4),
+        "memory": attr.int(default = 4000),
         "impl_options": attr.string_list_dict(default = {}),
         "pre_impl_tcl": attr.label(allow_single_file = [".tcl"]),
         "post_impl_tcl": attr.label(allow_single_file = [".tcl"]),
@@ -130,11 +124,11 @@ fpga_implementation = rule(
         ),
     },
     cfg = fpga_toolchain_transition,
-    toolchains = ["//fpga:toolchain_type"],
+    toolchains = [TOOLCHAIN_TYPE],
 )
 
 def _fpga_bitstream_impl(ctx):
-    toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
+    toolchain = ctx.toolchains[TOOLCHAIN_TYPE].fpga_info
     return toolchain.bitstream(ctx, toolchain)
 
 fpga_bitstream = rule(
@@ -146,8 +140,8 @@ fpga_bitstream = rule(
         "fpga_toolchain": attr.string(),
         "fpga_toolchain_version": attr.string(),
         "toolchain": attr.label(),
-        "max_threads": attr.int(),
-        "memory": attr.int(),
+        "max_threads": attr.int(default = 1),
+        "memory": attr.int(default = 1000),
         "bit_options": attr.string_list(default = []),
         "pre_bit_tcl": attr.label(allow_single_file = [".tcl"]),
         "post_bit_tcl": attr.label(allow_single_file = [".tcl"]),
@@ -156,11 +150,11 @@ fpga_bitstream = rule(
         ),
     },
     cfg = fpga_toolchain_transition,
-    toolchains = ["//fpga:toolchain_type"],
+    toolchains = [TOOLCHAIN_TYPE],
 )
 
 def _fpga_project_gui_impl(ctx):
-    toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
+    toolchain = ctx.toolchains[TOOLCHAIN_TYPE].fpga_info
     return toolchain.project_gui(ctx, toolchain)
 
 fpga_project_gui = rule(
@@ -178,11 +172,11 @@ fpga_project_gui = rule(
     },
     executable = True,
     cfg = fpga_toolchain_transition,
-    toolchains = ["//fpga:toolchain_type"],
+    toolchains = [TOOLCHAIN_TYPE],
 )
 
 def _fpga_dcp_gui_impl(ctx):
-    toolchain = ctx.toolchains["//fpga:toolchain_type"].fpga_info
+    toolchain = ctx.toolchains[TOOLCHAIN_TYPE].fpga_info
     return toolchain.dcp_gui(ctx, toolchain)
 
 fpga_dcp_gui = rule(
@@ -198,36 +192,72 @@ fpga_dcp_gui = rule(
     },
     executable = True,
     cfg = fpga_toolchain_transition,
-    toolchains = ["//fpga:toolchain_type"],
+    toolchains = [TOOLCHAIN_TYPE],
 )
 
-
 def fpga_flow(
-    name,
-    top,
-    part,
-    srcs = [],
-    deps = [],
-    constraints = [],
-    fpga_toolchain = None,
-    fpga_toolchain_version = None,
-    toolchain = None,
-    generics = {},
-    defines = {},
-    max_threads = 4,
-    memory = 4000,
-    bit_max_threads = 1,
-    bit_memory = 1000,
-    synth_options = [],
-    impl_options = {},
-    bit_options = [],
-    pre_synth_tcl = None,
-    post_synth_tcl = None,
-    pre_impl_tcl = None,
-    post_impl_tcl = None,
-    pre_bit_tcl = None,
-    post_bit_tcl = None,
-):
+        name,
+        top,
+        part,
+        srcs = [],
+        deps = [],
+        constraints = [],
+        design = None,
+        ips = [],
+        library_name = "work",
+        vhdl_version = "2008",
+        fpga_toolchain = None,
+        fpga_toolchain_version = None,
+        toolchain = None,
+        generics = {},
+        defines = {},
+        max_threads = 4,
+        memory = 4000,
+        bit_max_threads = 1,
+        bit_memory = 1000,
+        synth_options = [],
+        impl_options = {},
+        bit_options = [],
+        pre_synth_tcl = None,
+        post_synth_tcl = None,
+        pre_impl_tcl = None,
+        post_impl_tcl = None,
+        pre_bit_tcl = None,
+        post_bit_tcl = None,
+        pre_bd_hook = None,
+        post_bd_hook = None,
+        tags = []):
+    """Full flow.
+
+    Args:
+      design: an existing fpga_design target. Mutually exclusive with `ips`.
+      ips: fpga_ip_inst targets. When given (and no `design`), a design
+        `<name>_design` is created from them.
+    """
+    if design and ips:
+        fail("fpga_flow %s: 'design' and 'ips' are mutually exclusive" % name)
+    if design and (pre_bd_hook or post_bd_hook):
+        fail("fpga_flow %s: bd hooks belong on the fpga_design when 'design' is given" % name)
+
+    if ips:
+        design_name = name + "_design"
+        fpga_design(
+            name = design_name,
+            top = top,
+            part = part,
+            ips = ips,
+            deps = deps,
+            library_name = library_name,
+            vhdl_version = vhdl_version,
+            pre_bd_hook = pre_bd_hook,
+            post_bd_hook = post_bd_hook,
+            fpga_toolchain = fpga_toolchain,
+            fpga_toolchain_version = fpga_toolchain_version,
+            toolchain = toolchain,
+            tags = tags,
+        )
+        design = ":" + design_name
+
     fpga_project(
         name = name + "_project",
         part = part,
@@ -235,9 +265,13 @@ def fpga_flow(
         srcs = srcs,
         deps = deps,
         constraints = constraints,
+        design = design,
+        library_name = library_name,
+        vhdl_version = vhdl_version,
         fpga_toolchain = fpga_toolchain,
         fpga_toolchain_version = fpga_toolchain_version,
         toolchain = toolchain,
+        tags = tags,
     )
 
     fpga_synthesis(
@@ -255,12 +289,12 @@ def fpga_flow(
         synth_options = synth_options,
         pre_synth_tcl = pre_synth_tcl,
         post_synth_tcl = post_synth_tcl,
+        tags = tags,
     )
 
     fpga_implementation(
         name = name + "_implementation",
         synthesis = ":" + name + "_synthesis",
-        # project = ":" + name + "_project",
         part = part,
         fpga_toolchain = fpga_toolchain,
         fpga_toolchain_version = fpga_toolchain_version,
@@ -270,12 +304,12 @@ def fpga_flow(
         impl_options = impl_options,
         pre_impl_tcl = pre_impl_tcl,
         post_impl_tcl = post_impl_tcl,
+        tags = tags,
     )
 
     fpga_bitstream(
         name = name,
         implementation = ":" + name + "_implementation",
-        # project = ":" + name + "_project",
         part = part,
         fpga_toolchain = fpga_toolchain,
         fpga_toolchain_version = fpga_toolchain_version,
@@ -285,6 +319,7 @@ def fpga_flow(
         bit_options = bit_options,
         pre_bit_tcl = pre_bit_tcl,
         post_bit_tcl = post_bit_tcl,
+        tags = tags,
     )
 
     fpga_project_gui(
@@ -315,64 +350,3 @@ def fpga_flow(
         toolchain = toolchain,
         tags = ["manual"],
     )
-
-def _fpga_clock_domain_impl(ctx):
-    return [
-        FpgaClockDomainInfo(
-            clock_pin = ctx.attr.clock_pin,
-            clock_frequency = ctx.attr.clock_frequency,
-            reset_pin = ctx.attr.reset_pin,
-            reset_type = ctx.attr.reset_type,
-        ),
-    ]
-
-fpga_clock_domain = rule(
-    implementation = _fpga_clock_domain_impl,
-    attrs = {
-        "clock_pin": attr.string(mandatory = True),
-        "clock_frequency": attr.string(default = ""),
-        "reset_pin": attr.string(mandatory = True),
-        "reset_type": attr.string(default = "active_low"),
-    },
-)
-
-def _fpga_ip_config_impl(ctx):
-    sources = collect_sources(ctx)
-    
-    inst_tcl = None
-    for f in ctx.files.srcs:
-        if f.basename.startswith("vivado_inst") and f.basename.endswith(".tcl"):
-            inst_tcl = f
-            break
-            
-    clock_domain = None
-    if ctx.attr.clock_domain:
-        clock_domain = ctx.attr.clock_domain[FpgaClockDomainInfo]
-        
-    return [
-        FpgaIpInfo(
-            entity_name = ctx.attr.entity_name,
-            instance_name = ctx.attr.instance_name,
-            generics = ctx.attr.generics,
-            sources = sources,
-            memory_mapping = ctx.attr.memory_mapping,
-            ooc = ctx.attr.ooc,
-            inst_tcl = inst_tcl,
-            clock_domain = clock_domain,
-        ),
-    ]
-
-fpga_ip_config = rule(
-    implementation = _fpga_ip_config_impl,
-    attrs = {
-        "entity_name": attr.string(mandatory = True),
-        "instance_name": attr.string(mandatory = True),
-        "generics": attr.string_dict(default = {}),
-        "memory_mapping": attr.string(default = ""),
-        "ooc": attr.bool(default = True),
-        "clock_domain": attr.label(providers = [FpgaClockDomainInfo]),
-        "srcs": attr.label_list(allow_files = True),
-        "deps": attr.label_list(),
-        "constraints": attr.label_list(allow_files = True),
-    },
-)
