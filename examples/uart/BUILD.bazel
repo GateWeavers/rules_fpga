@@ -1,5 +1,5 @@
-load("@gateweaver_rules_vhdl//sim:vunit_rules.bzl", "vunit_sim")
-load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "vhdl_library")
+load("@gateweavers_rules_vhdl//sim:vunit_rules.bzl", "vunit_sim")
+load("@gateweavers_rules_vhdl//vhdl:vhdl.bzl", "vhdl_library")
 
 vhdl_library(
     name = "uart_lib",

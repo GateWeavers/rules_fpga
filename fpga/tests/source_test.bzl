@@ -8,7 +8,7 @@ load(
     "source_files",
     "to_vhdl_library_info",
 )
-load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo", "vhdl_library")
+load("@gateweavers_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo", "vhdl_library")
 
 # ---------------------------------------------------------------------------
 # Pure Starlark Unit Tests
@@ -148,7 +148,7 @@ def _rules_vhdl_interop_test_impl(ctx):
     units = src.vhdl_libs.to_list()
     lib_names = [u.library_name for u in units]
 
-    asserts.true(env, "ext_vhdl_lib" in lib_names, "Should absorb vhdl_library dependency from @gateweaver_rules_vhdl")
+    asserts.true(env, "ext_vhdl_lib" in lib_names, "Should absorb vhdl_library dependency from @gateweavers_rules_vhdl")
 
     return analysistest.end(env)
 

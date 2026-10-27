@@ -1,7 +1,7 @@
 load("//fpga:providers.bzl", "FpgaProjectInfo", "FpgaSynthesisInfo", "FpgaImplementationInfo", "FpgaBitstreamInfo")
 load("//fpga:source.bzl", "source_files","write_read_sources_tcl")
 load("//fpga:utility.bzl", "get_resource_set")
-load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo")
+load("@gateweavers_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo")
 
 
 def _get_vhdl_flag(version):

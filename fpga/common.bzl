@@ -1,5 +1,5 @@
 load("//fpga:providers.bzl","FpgaSourceInfo","VerilogInfo")
-load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo", "VhdlLibraryUnitInfo")
+load("@gateweavers_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo", "VhdlLibraryUnitInfo")
 
 VHDL_VERSIONS = ["1993", "2002", "2008", "2019"]
 

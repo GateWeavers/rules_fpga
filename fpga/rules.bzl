@@ -13,7 +13,8 @@ load(
 )
 load("//fpga:toolchain.bzl", "FpgaToolchainInfo")
 load("//fpga:flags.bzl", "fpga_toolchain_transition")
-load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo", "VhdlLibraryUnitInfo")
+load("@gateweavers_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo", "VhdlLibraryUnitInfo")
+
 load("//fpga:source.bzl", "collect_sources", _fpga_sources = "fpga_sources")
 load(
     "//fpga:design.bzl",

@@ -4,7 +4,7 @@ load(
     "FpgaSourceInfo",
     "VerilogInfo",
 )
-load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo", "VhdlLibraryUnitInfo")
+load("@gateweavers_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo", "VhdlLibraryUnitInfo")
 
 
 """Source collection for the FPGA rules.

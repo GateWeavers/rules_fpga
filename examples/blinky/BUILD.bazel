@@ -1,4 +1,4 @@
-load("@gateweaver_rules_vhdl//vhdl:vhdl.bzl", "vhdl_library")
+load("@gateweavers_rules_vhdl//vhdl:vhdl.bzl", "vhdl_library")
 load("//fpga:rules.bzl", "fpga_flow")
 
 vhdl_library(
