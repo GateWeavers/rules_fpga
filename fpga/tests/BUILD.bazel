@@ -1,3 +1,7 @@
-load(":ip_config_test.bzl", "ip_config_test_suite")
+load(":design_test.bzl", "design_test_suite")
+load(":rules_test.bzl", "rules_test_suite")
+load(":source_test.bzl", "source_test_suite")
 
-ip_config_test_suite(name = "ip_config")
+source_test_suite(name = "source_tests")
+design_test_suite(name = "design_tests")
+rules_test_suite(name = "rules_tests")
