@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [ main]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Unit & Analysis Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Mount Bazel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-cache-${{ runner.os }}
+          restore-keys: |
+            bazel-cache-${{ runner.os }}
+
+      - name: Run unit & analysis test suite
+        run: |
+          bazel test //fpga/tests:all //vivado/tests:all --test_output=errors
+
+      - name: Validate example analysis
+        run: |
+          bazel build //examples/blinky:all //examples/zynq/... --nobuild
+
+      - name: Validate project generation actions
+        run: |
+          bazel build //examples/blinky:blinky_pynq_z1_project //examples/zynq:zynq_project //examples/zynq:zynq_design
