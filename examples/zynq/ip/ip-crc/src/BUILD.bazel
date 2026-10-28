@@ -1,0 +1,20 @@
+load("@gateweavers_rules_vhdl//vhdl:vhdl.bzl", "vhdl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+vhdl_library(
+    name = "crc_top",
+    srcs = ["crc_top.vhd"],
+    library_name = "ip_crc",
+    vhdl_version = "2008",
+)
+
+vhdl_library(
+    name = "src",
+    srcs = ["crc_top_wrapper.vhd"],
+    deps = [":crc_top"],
+    library_name = "ip_crc",
+    vhdl_version = "93",
+)
+
+exports_files(["vivado_inst_crc.tcl"])
