@@ -6,11 +6,6 @@ module(
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "gateweavers_rules_vhdl", version = "0.3.0")
 
-local_path_override(
-    module_name = "gateweavers_rules_vhdl",
-    path = "../rules_vhdl",
-)
-
 vivado_toolchains = use_extension("//vivado:extensions.bzl", "vivado_toolchains")
 vivado_toolchains.vivado(
     name = "vivado_2024_2",
