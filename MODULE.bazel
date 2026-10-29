@@ -6,7 +6,7 @@ module(
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "gateweavers_rules_vhdl", version = "0.3.0")
 
-vivado_toolchains = use_extension("//vivado:extensions.bzl", "vivado_toolchains")
+vivado_toolchains = use_extension("//vivado:extensions.bzl", "vivado_toolchains",dev_dependency = True)
 vivado_toolchains.vivado(
     name = "vivado_2024_2",
     path = "/opt/Xilinx/Vivado/2024.2/",
@@ -15,4 +15,4 @@ vivado_toolchains.vivado(
 )
 use_repo(vivado_toolchains, "fpga_toolchains")
 
-register_toolchains("@fpga_toolchains//:all")
+register_toolchains("@fpga_toolchains//:all",dev_dependency = True)

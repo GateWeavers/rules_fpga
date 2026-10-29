@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+permissions:
+  id-token: write
+  attestations: write
+  contents: write
+jobs:
+  release:
+    # SLSA trusted-builder reusable workflows MUST be referenced by a semantic
+    # version tag, not a commit SHA: slsa-verifier reads the builder ref from the
+    # provenance and rejects a bare SHA ("unexpected ref type"), which breaks the
+    # release-artifact attestations that BCR's presubmit verifies. Do not SHA-pin.
+    uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@v7.6.0
+    with:
+      prerelease: false
+      release_files: |
+        rules_fpga-*.tar.gz
+      tag_name: ${{ github.ref_name }}
+      # Bypass rerunning the tests
+      bazel_test_command: "true"
+
+  publish:
+    needs: [release]
+    uses: ./.github/workflows/publish.yml
+    with:
+      tag_name: ${{ github.ref_name }}
+    secrets:
+      BCR_PUBLISH_TOKEN: ${{ secrets.BCR_PUBLISH_TOKEN }}
