@@ -8,10 +8,9 @@
 
 - **End-to-End Workflows**: Orchestrate complete FPGA builds with [`fpga_flow`](#fpga_flow) or compose fine-grained pipeline steps ([`fpga_project`](#fpga_project), [`fpga_synthesis`](#fpga_synthesis), [`fpga_implementation`](#fpga_implementation), [`fpga_bitstream`](#fpga_bitstream)).
 - **Block Design & IP Management**: Declare reusable IP cores with [`fpga_ip`](#fpga_ip), instantiate them inline or Out-of-Context (OOC) with [`fpga_ip_inst`](#fpga_ip_inst), and generate block designs automatically using [`fpga_design`](#fpga_design).
-- **OOC Synthesis Deduplication**: Shared IP configurations automatically dedup into a single synthesis run, significantly cutting build times and memory usage on large graphs.
 - **Interactive GUI Debugging**: Inspect projects and routed checkpoints in Vivado GUI directly via `bazel run <target>.gui` without manual environment setup.
-- **Hermetic & Bzlmod-Ready**: Modular toolchain resolution via Bzlmod (`vivado_toolchains`), seamless interop with [`@gateweavers_rules_vhdl`](https://github.com/GateWeavers/rules_vhdl), and an extensive analysis test suite that runs in CI/CD without requiring Vivado licenses.
-
+- **Hermetic & Bzlmod-Ready**: Modular toolchain resolution via Bzlmod (`vivado_toolchains`), seamless interop with [`@gateweavers_rules_vhdl`](https://github.com/GateWeavers/rules_vhdl).
+- **Multi FPGA TOolchain**: By default Vivado is fully supported, Yosys and Lattice toolchains are work in progress.
 ---
 
 ## Setup (`MODULE.bazel`)
@@ -24,8 +23,8 @@ module(
     version = "0.1.0",
 )
 
-bazel_dep(name = "gateweavers_rules_fpga", version = "0.1.0")
-bazel_dep(name = "gateweavers_rules_vhdl", version = "0.1.1", repo_name = "gateweaver_rules_vhdl")
+bazel_dep(name = "gateweavers_rules_fpga", version = "0.3.0")
+bazel_dep(name = "gateweavers_rules_vhdl", version = "0.1.0")
 
 # 1. Configure Vivado Toolchain Backend
 vivado_toolchains = use_extension("@gateweavers_rules_fpga//vivado:extensions.bzl", "vivado_toolchains")
@@ -51,7 +50,7 @@ Defines a Vivado FPGA toolchain instance. It packages environment setup commands
 
 When targets such as `fpga_synthesis`, `fpga_implementation`, `fpga_bitstream`, `fpga_project`, or `fpga_design` resolve the `//fpga:toolchain_type` toolchain, they obtain this provider and delegate action generation and TCL emission to the functions configured here.
 
-In modern Bzlmod setups, instances of `vivado_toolchain` are generated automatically by the `vivado_toolchains` module extension (from `//vivado:extensions.bzl`). However, this rule may also be instantiated manually in a `BUILD` file to define a bespoke Vivado toolchain with customized TCL templates or invocation wrappers.
+Instances of `vivado_toolchain` are generated automatically by the `vivado_toolchains` module extension (from `//vivado:extensions.bzl`). However, this rule may also be instantiated manually in a `BUILD` file to define a bespoke Vivado toolchain with customized TCL templates or invocation wrappers.
 
 #### Attributes
 
@@ -162,7 +161,7 @@ fpga_ip(
     inst_tcl = "//examples/zynq/ip/ip-crc/src:vivado_inst_crc.tcl",
     interfaces = {
         "s_axi": "slave",
-        "M_AXI*": "master",
+        "M_AXI": "master",
     },
     deps = ["//examples/zynq/ip/ip-crc/src:src"],
 )
