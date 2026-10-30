@@ -159,7 +159,7 @@ def _fpga_ip_inst_impl(ctx):
     )
 
     if ctx.attr.ooc:
-        fail("WIP : this feature is not yet supported")
+        print("WIP : this feature is not yet supported")
         return [DefaultInfo(), inst]
 
     return [DefaultInfo(files = source_files(ip.sources)), inst, ip.sources]
