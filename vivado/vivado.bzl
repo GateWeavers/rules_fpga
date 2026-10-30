@@ -3,62 +3,6 @@ load("//fpga:source.bzl", "source_files","write_read_sources_tcl")
 load("//fpga:utility.bzl", "get_resource_set")
 load("@gateweavers_rules_vhdl//vhdl:vhdl.bzl", "VhdlLibraryInfo")
 
-
-def _get_vhdl_flag(version):
-    if not version:
-        return ""
-    # Normalize version string
-    v = str(version).lower().strip()
-    if v == "2008" or v == "vhdl2008":
-        return "-vhdl2008"
-    if v == "2019" or v == "vhdl2019":
-        return "-vhdl2019"
-    return ""
-
-def _format_sources(source_info, use_short_path = False, use_read_cmd = False):
-    inputs_depsets = [source_info.verilog_srcs, source_info.constraints]
-    vhdl_content = []
-
-    for item in source_info.vhdl_libs.to_list():
-        if hasattr(item, "all_libs"):
-            units = item.all_libs.to_list()
-        elif hasattr(item, "library_name"):
-            units = [item]
-        elif VhdlLibraryInfo in item:
-            units = item[VhdlLibraryInfo].all_libs.to_list()
-        else:
-            units = [item]
-        for unit in units:
-            files = [f.short_path if use_short_path else f.path for f in unit.sources.to_list()]
-            if not files:
-                continue
-            lib_name = getattr(unit, "library_name", getattr(unit, "library", "work"))
-            flag = _get_vhdl_flag(getattr(unit, "vhdl_version", None))
-            flag_str = " " + flag if flag else ""
-            vhdl_content.append("read_vhdl -library %s%s {%s}" % (lib_name, flag_str, " ".join(files)))
-            inputs_depsets.append(unit.sources)
-
-    verilog_files = [f.short_path if use_short_path else f.path for f in source_info.verilog_srcs.to_list()]
-    if verilog_files:
-        if use_read_cmd:
-            verilog_content = ["read_verilog {%s}" % " ".join(verilog_files)]
-        else:
-            verilog_content = ["add_files -norecurse {%s}" % " ".join(verilog_files)]
-    else:
-        verilog_content = []
-
-    constraint_files = [f.short_path if use_short_path else f.path for f in source_info.constraints.to_list()]
-    if constraint_files:
-        if use_read_cmd:
-            constraint_content = ["read_xdc {%s}" % " ".join(constraint_files)]
-        else:
-            constraint_content = ["add_files -fileset constrs_1 -norecurse {%s}" % " ".join(constraint_files)]
-    else:
-        constraint_content = []
-
-    inputs_depset = depset(transitive = inputs_depsets)
-    return vhdl_content, verilog_content, constraint_content, inputs_depset
-
 def _write_gui_runner(ctx, toolchain_info, tcl_script):
     runner = ctx.actions.declare_file(ctx.label.name + "_runner.sh")
     script_content = "#!/bin/bash\n"
@@ -122,13 +66,7 @@ def vivado_create_project(ctx, toolchain_info, source_info, design_info = None):
             "{PROJECT_NAME}": ctx.label.name,
             "{OUTPUT_DIR}": ".",
             "{PART_NAME}": part,
-            # Transitional: the create_project template still has the three
-            # legacy placeholders (vivado_project_gui fills them too). The
-            # first one carries the `source` line, the other two stay empty.
-            # Once the GUI is migrated, collapse them into one {READ_SOURCES}.
-            "{ADD_VHDL_SOURCES}": "source %s" % sources_tcl.path,
-            "{ADD_VERILOG_SOURCES}": "",
-            "{ADD_CONSTRAINTS}": "",
+            "{READ_SOURCES}": "source %s" % sources_tcl.path,
             "{SOURCE_BD_SCRIPT}": source_bd_line,
             "{TOP_MODULE}": top if top else "top",
         },
